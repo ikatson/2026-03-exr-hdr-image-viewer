@@ -156,8 +156,8 @@ impl State {
             use ::exr::prelude::*;
             let img = read_all_data_from_file("images/qwantani_noon_4k.exr").unwrap();
             let channels = &img.layer_data[0].channel_data.list;
-            let image_width = 4096u32;
-            let image_height = 2048u32;
+            let image_width: u32 = img.attributes.display_window.size.0.try_into().unwrap();
+            let image_height: u32 = img.attributes.display_window.size.1.try_into().unwrap();
 
             let channel_values = |name: &str| -> Vec<f32> {
                 let channel = channels
@@ -188,8 +188,8 @@ impl State {
                     &TextureDescriptor {
                         label: Some(label),
                         size: Extent3d {
-                            width: 4096,
-                            height: 2048,
+                            width: image_width,
+                            height: image_height,
                             depth_or_array_layers: 1,
                         },
                         mip_level_count: 1,
@@ -599,8 +599,7 @@ impl ApplicationHandler for App {
             } => {
                 state.print_picked_color();
             }
-            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed =>
-            {
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
                     PhysicalKey::Code(KeyCode::BracketRight) => state.adjust_exposure(1.1),
