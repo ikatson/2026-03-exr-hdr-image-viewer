@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use wgpu::{
-    Extent3d, TextureDescriptor, TextureFormat, TextureUsages, util::DeviceExt,
+    BufferUsages, Extent3d, TextureDescriptor, TextureFormat, TextureUsages, util::DeviceExt,
     wgt::TextureViewDescriptor,
 };
 use winit::{
@@ -9,6 +9,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle},
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
@@ -74,6 +75,24 @@ fn f32_slice_as_bytes(data: &[f32]) -> &[u8] {
     unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct ShaderParams {
+    exposure: f32,
+    tone_map_mode: u32, // 0: passthrough, 1: reinhard
+    _pad0: u32,
+    _pad1: u32,
+}
+
+fn shader_params_as_bytes(params: &ShaderParams) -> &[u8] {
+    unsafe {
+        core::slice::from_raw_parts(
+            (params as *const ShaderParams).cast::<u8>(),
+            core::mem::size_of::<ShaderParams>(),
+        )
+    }
+}
+
 fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
     let preferred = [TextureFormat::Rgba16Float, TextureFormat::Rgba32Float];
     preferred
@@ -103,6 +122,9 @@ struct State {
     channel_g: Vec<f32>,
     channel_b: Vec<f32>,
     cursor_pos: Option<PhysicalPosition<f64>>,
+    exposure: f32,
+    tone_map_enabled: bool,
+    params_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -246,6 +268,16 @@ impl State {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -253,6 +285,18 @@ impl State {
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
+        });
+        let exposure = 1.0f32;
+        let tone_map_enabled = false;
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("shader-params-buffer"),
+            contents: shader_params_as_bytes(&ShaderParams {
+                exposure,
+                tone_map_mode: u32::from(tone_map_enabled),
+                _pad0: 0,
+                _pad1: 0,
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rgb-texture-bind-group"),
@@ -273,6 +317,10 @@ impl State {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -328,6 +376,9 @@ impl State {
             channel_g,
             channel_b,
             cursor_pos: None,
+            exposure,
+            tone_map_enabled,
+            params_buffer,
         };
 
         // Configure surface for the first time
@@ -364,6 +415,29 @@ impl State {
 
     fn update_cursor_pos(&mut self, position: PhysicalPosition<f64>) {
         self.cursor_pos = Some(position);
+    }
+
+    fn update_shader_params(&self) {
+        let params = ShaderParams {
+            exposure: self.exposure,
+            tone_map_mode: u32::from(self.tone_map_enabled),
+            _pad0: 0,
+            _pad1: 0,
+        };
+        self.queue
+            .write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
+    }
+
+    fn adjust_exposure(&mut self, factor: f32) {
+        self.exposure = (self.exposure * factor).max(0.001);
+        self.update_shader_params();
+        println!("exposure={:.4} tone_map={}", self.exposure, self.tone_map_enabled);
+    }
+
+    fn toggle_tone_map(&mut self) {
+        self.tone_map_enabled = !self.tone_map_enabled;
+        self.update_shader_params();
+        println!("exposure={:.4} tone_map={}", self.exposure, self.tone_map_enabled);
     }
 
     fn print_picked_color(&self) {
@@ -500,6 +574,16 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 state.print_picked_color();
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed && !event.repeat =>
+            {
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
+                    PhysicalKey::Code(KeyCode::BracketRight) => state.adjust_exposure(1.1),
+                    PhysicalKey::Code(KeyCode::KeyT) => state.toggle_tone_map(),
+                    _ => {}
+                }
             }
             _ => (),
         }

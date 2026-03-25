@@ -10,6 +10,16 @@ var b_tex: texture_2d<f32>;
 @group(0) @binding(3)
 var channel_sampler: sampler;
 
+struct Params {
+    exposure: f32,
+    tone_map_mode: u32, // 0: passthrough, 1: reinhard
+    _pad0: u32,
+    _pad1: u32,
+};
+
+@group(0) @binding(4)
+var<uniform> params: Params;
+
 struct VsOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -41,5 +51,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let r = sample_channel(r_tex, uv);
     let g = sample_channel(g_tex, uv);
     let b = sample_channel(b_tex, uv);
-    return vec4<f32>(r, g, b, 1.0);
+    let color = vec3<f32>(r, g, b) * params.exposure;
+    if params.tone_map_mode == 1u {
+        let mapped = color / (vec3<f32>(1.0) + color);
+        return vec4<f32>(mapped, 1.0);
+    }
+    return vec4<f32>(color, 1.0);
 }
