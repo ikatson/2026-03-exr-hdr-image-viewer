@@ -11,6 +11,61 @@ use winit::{
     window::{Window, WindowId},
 };
 
+const PERCENTILES: [f64; 13] = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 99.0, 99.5, 99.9, 100.0];
+
+fn print_channel_stats(name: &str, data: &[f32]) {
+    let mut min = f32::INFINITY;
+    let mut max = f32::NEG_INFINITY;
+    let mut sum = 0.0f64;
+    let mut finite_count = 0usize;
+    let mut non_finite_count = 0usize;
+
+    for &v in data {
+        if v.is_finite() {
+            min = min.min(v);
+            max = max.max(v);
+            sum += v as f64;
+            finite_count += 1;
+        } else {
+            non_finite_count += 1;
+        }
+    }
+
+    if finite_count == 0 {
+        panic!("channel {name} contains no finite samples");
+    }
+
+    let avg = sum / finite_count as f64;
+    let mut sq_diff_sum = 0.0f64;
+    let mut sorted_values = Vec::with_capacity(finite_count);
+
+    for &v in data {
+        if !v.is_finite() {
+            continue;
+        }
+        let diff = v as f64 - avg;
+        sq_diff_sum += diff * diff;
+        sorted_values.push(v);
+    }
+    sorted_values.sort_by(|a, b| a.total_cmp(b));
+
+    let stddev = (sq_diff_sum / finite_count as f64).sqrt();
+    println!(
+        "channel={name} n={finite_count} non_finite={non_finite_count} min={min:.6} max={max:.6} avg={avg:.6} stddev={stddev:.6}"
+    );
+    println!("+-----+----------------+-----------+");
+    println!("| pct | x (below this) | below_n   |");
+    println!("+-----+----------------+-----------+");
+
+    for &p in &PERCENTILES {
+        let rank = ((p / 100.0) * (finite_count.saturating_sub(1)) as f64).round() as usize;
+        let x = sorted_values[rank.min(finite_count - 1)];
+        let below_n = sorted_values.partition_point(|v| *v <= x);
+        println!("| {:>4.1}%| {:>14.6} | {:>9} |", p, x, below_n);
+    }
+    println!("+-----+----------------+-----------+");
+}
+
 struct State {
     instance: wgpu::Instance,
     window: Arc<Window>,
@@ -40,8 +95,7 @@ impl State {
         let size = window.inner_size();
 
         let surface = instance.create_surface(window.clone()).unwrap();
-        let cap = surface.get_capabilities(&adapter);
-        dbg!(&cap.formats);
+        let _cap = surface.get_capabilities(&adapter);
         let surface_format: TextureFormat = TextureFormat::Rgba16Float;
 
         let (r_view, g_view, b_view) = {
@@ -50,13 +104,18 @@ impl State {
             let channels = &img.layer_data[0].channel_data.list;
 
             let channel_bytes = |name: &str| -> &[u8] {
-                let channel = channels.iter().find(|c| c.name.eq(name)).unwrap_or_else(|| {
-                    panic!("missing EXR channel: {name}");
-                });
+                let channel = channels
+                    .iter()
+                    .find(|c| c.name.eq(name))
+                    .unwrap_or_else(|| {
+                        panic!("missing EXR channel: {name}");
+                    });
                 let data = match &channel.sample_data.levels_as_slice()[0] {
                     FlatSamples::F32(data) => data.as_slice(),
                     _ => panic!("unsupported sample format for channel: {name}"),
                 };
+                print_channel_stats(name, data);
+
                 // EXR stores F32 channel data; reinterpret it for GPU upload.
                 unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) }
             };
@@ -101,48 +160,47 @@ impl State {
             )
         };
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("rgb-texture-bind-group-layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rgb-texture-bind-group-layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+            ],
+        });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
