@@ -1,0 +1,11 @@
+[package]
+name = "exhdr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+env_logger = "*"
+exr = "1.74.0"
+pollster = "0.4"
+wgpu = "29.0.0"
+winit = { version = "0.30.8" }
