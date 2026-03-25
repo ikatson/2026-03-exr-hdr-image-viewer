@@ -599,8 +599,7 @@ impl ApplicationHandler for App {
             } => {
                 state.print_picked_color();
             }
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed && !event.repeat =>
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed =>
             {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
