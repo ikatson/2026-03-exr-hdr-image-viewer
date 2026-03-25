@@ -44,56 +44,66 @@ impl State {
         dbg!(&cap.formats);
         let surface_format: TextureFormat = TextureFormat::Rgba16Float;
 
-        let texture = {
+        let (r_view, g_view, b_view) = {
             use ::exr::prelude::*;
             let img = read_all_data_from_file("images/qwantani_noon_4k.exr").unwrap();
             let channels = &img.layer_data[0].channel_data.list;
-            let r = match &channels
-                .iter()
-                .find(|c| c.name.eq("R"))
-                .unwrap()
-                .sample_data
-                .levels_as_slice()[0]
-            {
-                FlatSamples::F32(data) => data.as_slice(),
-                _ => todo!(),
+
+            let channel_bytes = |name: &str| -> &[u8] {
+                let channel = channels.iter().find(|c| c.name.eq(name)).unwrap_or_else(|| {
+                    panic!("missing EXR channel: {name}");
+                });
+                let data = match &channel.sample_data.levels_as_slice()[0] {
+                    FlatSamples::F32(data) => data.as_slice(),
+                    _ => panic!("unsupported sample format for channel: {name}"),
+                };
+                // EXR stores F32 channel data; reinterpret it for GPU upload.
+                unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) }
             };
-            let r = unsafe { core::slice::from_raw_parts(r.as_ptr().cast::<u8>(), r.len() * 4) };
-            device.create_texture_with_data(
-                &queue,
-                &TextureDescriptor {
-                    label: None,
-                    size: Extent3d {
-                        width: 4096,
-                        height: 2048,
-                        depth_or_array_layers: 1,
+
+            let create_channel_view = |label: &'static str, bytes: &[u8]| {
+                let texture = device.create_texture_with_data(
+                    &queue,
+                    &TextureDescriptor {
+                        label: Some(label),
+                        size: Extent3d {
+                            width: 4096,
+                            height: 2048,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: TextureFormat::R32Float,
+                        usage: TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[TextureFormat::R32Float],
                     },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: TextureFormat::R32Float,
-                    usage: TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[TextureFormat::R32Float],
-                },
-                wgpu::wgt::TextureDataOrder::default(),
-                r,
+                    wgpu::wgt::TextureDataOrder::default(),
+                    bytes,
+                );
+                texture.create_view(&TextureViewDescriptor {
+                    label: Some(label),
+                    format: Some(TextureFormat::R32Float),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    usage: Some(TextureUsages::TEXTURE_BINDING),
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    mip_level_count: None,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                })
+            };
+
+            (
+                create_channel_view("r-channel-view", channel_bytes("R")),
+                create_channel_view("g-channel-view", channel_bytes("G")),
+                create_channel_view("b-channel-view", channel_bytes("B")),
             )
         };
-        let txview = texture.create_view(&TextureViewDescriptor {
-            label: None,
-            format: Some(TextureFormat::R32Float),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            usage: Some(TextureUsages::TEXTURE_BINDING),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            mip_level_count: None,
-            base_array_layer: 0,
-            array_layer_count: None,
-        });
 
         let bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("r-texture-bind-group-layout"),
+                label: Some("rgb-texture-bind-group-layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -108,6 +118,26 @@ impl State {
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                         count: None,
                     },
@@ -120,15 +150,23 @@ impl State {
             ..Default::default()
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("r-texture-bind-group"),
+            label: Some("rgb-texture-bind-group"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&txview),
+                    resource: wgpu::BindingResource::TextureView(&r_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&g_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&b_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],

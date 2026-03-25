@@ -2,7 +2,13 @@
 var r_tex: texture_2d<f32>;
 
 @group(0) @binding(1)
-var r_sampler: sampler;
+var g_tex: texture_2d<f32>;
+
+@group(0) @binding(2)
+var b_tex: texture_2d<f32>;
+
+@group(0) @binding(3)
+var channel_sampler: sampler;
 
 struct VsOut {
     @builtin(position) position: vec4<f32>,
@@ -25,8 +31,15 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     return out;
 }
 
+fn sample_channel(tex: texture_2d<f32>, uv: vec2<f32>) -> f32 {
+    return textureSampleLevel(tex, channel_sampler, uv, 0.0).r;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let r = textureSampleLevel(r_tex, r_sampler, in.uv, 0.0).r;
-    return vec4<f32>(r, r, r, 1.0);
+    let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
+    let r = sample_channel(r_tex, uv);
+    let g = sample_channel(g_tex, uv);
+    let b = sample_channel(b_tex, uv);
+    return vec4<f32>(r, g, b, 1.0);
 }
