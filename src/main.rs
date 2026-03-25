@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use wgpu::TextureFormat;
+use exr::image::write::channels::WritableChannels;
+use wgpu::{
+    Extent3d, TextureDescriptor, TextureFormat, TextureUsages, util::DeviceExt,
+    wgt::TextureViewDescriptor,
+};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -16,6 +20,8 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
+    texture: wgpu::Texture,
+    txview: wgpu::TextureView,
 }
 
 impl State {
@@ -39,10 +45,52 @@ impl State {
         dbg!(&cap.formats);
         let surface_format: TextureFormat = TextureFormat::Rgba16Float;
 
-        {
+        let texture = {
             use ::exr::prelude::*;
-            read_all_data_from_file("/tmp/")
-        }
+            let img = read_all_data_from_file("images/qwantani_noon_4k.exr").unwrap();
+            let channels = &img.layer_data[0].channel_data.list;
+            let r = match &channels
+                .iter()
+                .find(|c| c.name.eq("R"))
+                .unwrap()
+                .sample_data
+                .levels_as_slice()[0]
+            {
+                FlatSamples::F32(data) => data.as_slice(),
+                _ => todo!(),
+            };
+            let r = unsafe { core::slice::from_raw_parts(r.as_ptr().cast::<u8>(), r.len() * 4) };
+            device.create_texture_with_data(
+                &queue,
+                &TextureDescriptor {
+                    label: None,
+                    size: Extent3d {
+                        width: 4096,
+                        height: 2048,
+                        depth_or_array_layers: 0,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: TextureFormat::R32Float,
+                    usage: TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[TextureFormat::R32Float],
+                },
+                wgpu::wgt::TextureDataOrder::default(),
+                r,
+            )
+        };
+        let txview = texture.create_view(&TextureViewDescriptor {
+            label: None,
+            format: Some(TextureFormat::R32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
 
         let state = State {
             instance,
@@ -52,6 +100,8 @@ impl State {
             size,
             surface,
             surface_format,
+            texture,
+            txview,
         };
 
         // Configure surface for the first time
