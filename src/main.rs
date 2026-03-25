@@ -6,12 +6,15 @@ use wgpu::{
 };
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    dpi::PhysicalPosition,
+    event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle},
     window::{Window, WindowId},
 };
 
-const PERCENTILES: [f64; 13] = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 99.0, 99.5, 99.9, 100.0];
+const PERCENTILES: [f64; 13] = [
+    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 99.0, 99.5, 99.9, 100.0,
+];
 
 fn print_channel_stats(name: &str, data: &[f32]) {
     let mut min = f32::INFINITY;
@@ -66,6 +69,24 @@ fn print_channel_stats(name: &str, data: &[f32]) {
     println!("+-----+----------------+-----------+");
 }
 
+fn f32_slice_as_bytes(data: &[f32]) -> &[u8] {
+    // Reinterpret f32 channel values as raw bytes for GPU upload.
+    unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) }
+}
+
+fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
+    let preferred = [TextureFormat::Rgba16Float, TextureFormat::Rgba32Float];
+    preferred
+        .iter()
+        .find_map(|fmt| cap.formats.iter().copied().find(|f| f == fmt))
+        .unwrap_or_else(|| {
+            panic!(
+                "No HDR surface format available. Supported formats: {:?}",
+                cap.formats
+            )
+        })
+}
+
 struct State {
     instance: wgpu::Instance,
     window: Arc<Window>,
@@ -76,6 +97,12 @@ struct State {
     surface_format: wgpu::TextureFormat,
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    image_width: u32,
+    image_height: u32,
+    channel_r: Vec<f32>,
+    channel_g: Vec<f32>,
+    channel_b: Vec<f32>,
+    cursor_pos: Option<PhysicalPosition<f64>>,
 }
 
 impl State {
@@ -95,15 +122,21 @@ impl State {
         let size = window.inner_size();
 
         let surface = instance.create_surface(window.clone()).unwrap();
-        let _cap = surface.get_capabilities(&adapter);
-        let surface_format: TextureFormat = TextureFormat::Rgba16Float;
+        let cap = surface.get_capabilities(&adapter);
+        let surface_format = pick_hdr_surface_format(&cap);
+        println!(
+            "surface selected: format={:?} present_modes={:?} alpha_modes={:?}",
+            surface_format, cap.present_modes, cap.alpha_modes
+        );
 
-        let (r_view, g_view, b_view) = {
+        let (image_width, image_height, channel_r, channel_g, channel_b, r_view, g_view, b_view) = {
             use ::exr::prelude::*;
             let img = read_all_data_from_file("images/qwantani_noon_4k.exr").unwrap();
             let channels = &img.layer_data[0].channel_data.list;
+            let image_width = 4096u32;
+            let image_height = 2048u32;
 
-            let channel_bytes = |name: &str| -> &[u8] {
+            let channel_values = |name: &str| -> Vec<f32> {
                 let channel = channels
                     .iter()
                     .find(|c| c.name.eq(name))
@@ -115,12 +148,18 @@ impl State {
                     _ => panic!("unsupported sample format for channel: {name}"),
                 };
                 print_channel_stats(name, data);
-
-                // EXR stores F32 channel data; reinterpret it for GPU upload.
-                unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) }
+                data.to_vec()
             };
 
-            let create_channel_view = |label: &'static str, bytes: &[u8]| {
+            let channel_r = channel_values("R");
+            let channel_g = channel_values("G");
+            let channel_b = channel_values("B");
+            let expected_len = (image_width * image_height) as usize;
+            assert_eq!(channel_r.len(), expected_len, "unexpected R channel size");
+            assert_eq!(channel_g.len(), expected_len, "unexpected G channel size");
+            assert_eq!(channel_b.len(), expected_len, "unexpected B channel size");
+
+            let create_channel_view = |label: &'static str, values: &[f32]| {
                 let texture = device.create_texture_with_data(
                     &queue,
                     &TextureDescriptor {
@@ -138,7 +177,7 @@ impl State {
                         view_formats: &[TextureFormat::R32Float],
                     },
                     wgpu::wgt::TextureDataOrder::default(),
-                    bytes,
+                    f32_slice_as_bytes(values),
                 );
                 texture.create_view(&TextureViewDescriptor {
                     label: Some(label),
@@ -152,11 +191,19 @@ impl State {
                     array_layer_count: None,
                 })
             };
+            let r_view = create_channel_view("r-channel-view", &channel_r);
+            let g_view = create_channel_view("g-channel-view", &channel_g);
+            let b_view = create_channel_view("b-channel-view", &channel_b);
 
             (
-                create_channel_view("r-channel-view", channel_bytes("R")),
-                create_channel_view("g-channel-view", channel_bytes("G")),
-                create_channel_view("b-channel-view", channel_bytes("B")),
+                image_width,
+                image_height,
+                channel_r,
+                channel_g,
+                channel_b,
+                r_view,
+                g_view,
+                b_view,
             )
         };
 
@@ -253,7 +300,7 @@ impl State {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format.add_srgb_suffix(),
+                    format: surface_format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -275,6 +322,12 @@ impl State {
             surface_format,
             bind_group,
             render_pipeline,
+            image_width,
+            image_height,
+            channel_r,
+            channel_g,
+            channel_b,
+            cursor_pos: None,
         };
 
         // Configure surface for the first time
@@ -309,6 +362,41 @@ impl State {
         self.configure_surface();
     }
 
+    fn update_cursor_pos(&mut self, position: PhysicalPosition<f64>) {
+        self.cursor_pos = Some(position);
+    }
+
+    fn print_picked_color(&self) {
+        let Some(cursor_pos) = self.cursor_pos else {
+            return;
+        };
+        if self.size.width == 0 || self.size.height == 0 {
+            return;
+        }
+
+        let max_x = self.size.width.saturating_sub(1) as f64;
+        let max_y = self.size.height.saturating_sub(1) as f64;
+        let clamped_x = cursor_pos.x.clamp(0.0, max_x);
+        let clamped_y = cursor_pos.y.clamp(0.0, max_y);
+
+        let u = clamped_x / self.size.width as f64;
+        let v = clamped_y / self.size.height as f64;
+        let px = (u * self.image_width.saturating_sub(1) as f64).round() as usize;
+        let py = (v * self.image_height.saturating_sub(1) as f64).round() as usize;
+        let idx = py
+            .saturating_mul(self.image_width as usize)
+            .saturating_add(px)
+            .min(self.channel_r.len().saturating_sub(1));
+
+        let r = self.channel_r[idx];
+        let g = self.channel_g[idx];
+        let b = self.channel_b[idx];
+        println!(
+            "pick window=({:.1},{:.1}) image=({}, {}) rgb=({:.6}, {:.6}, {:.6})",
+            cursor_pos.x, cursor_pos.y, px, py, r, g, b
+        );
+    }
+
     fn render(&mut self) {
         // Create texture view.
         // NOTE: We must handle Timeout because the surface may be unavailable
@@ -331,12 +419,7 @@ impl State {
         };
         let texture_view = surface_texture
             .texture
-            .create_view(&wgpu::TextureViewDescriptor {
-                // Without add_srgb_suffix() the image we will be working with
-                // might not be "gamma correct".
-                format: Some(self.surface_format.add_srgb_suffix()),
-                ..Default::default()
-            });
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -407,6 +490,16 @@ impl ApplicationHandler for App {
                 // Reconfigures the size of the surface. We do not re-render
                 // here as this event is always followed up by redraw request.
                 state.resize(size);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                state.update_cursor_pos(position);
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => {
+                state.print_picked_color();
             }
             _ => (),
         }
