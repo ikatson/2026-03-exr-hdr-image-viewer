@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use clap::Parser;
+#[cfg(target_os = "macos")]
+use objc2::{msg_send, runtime::AnyObject};
 use wgpu::{
     BufferUsages, Extent3d, TextureDescriptor, TextureFormat, TextureUsages, util::DeviceExt,
     wgt::TextureViewDescriptor,
@@ -11,8 +13,10 @@ use winit::{
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowId},
+    window::{Fullscreen, Window, WindowId},
 };
+#[cfg(target_os = "macos")]
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 const PERCENTILES: [f64; 13] = [
     10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 99.0, 99.5, 99.9, 100.0,
@@ -115,6 +119,35 @@ fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
         })
 }
 
+#[cfg(target_os = "macos")]
+fn macos_edr_headroom(window: &Window) -> Option<(f32, f32)> {
+    let handle = window.window_handle().ok()?;
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+        return None;
+    };
+
+    let ns_view = appkit.ns_view.as_ptr().cast::<AnyObject>();
+    if ns_view.is_null() {
+        return None;
+    }
+
+    let ns_window: *mut AnyObject = unsafe { msg_send![ns_view, window] };
+    if ns_window.is_null() {
+        return None;
+    }
+
+    let ns_screen: *mut AnyObject = unsafe { msg_send![ns_window, screen] };
+    if ns_screen.is_null() {
+        return None;
+    }
+
+    let current: f64 =
+        unsafe { msg_send![ns_screen, maximumExtendedDynamicRangeColorComponentValue] };
+    let potential: f64 =
+        unsafe { msg_send![ns_screen, maximumPotentialExtendedDynamicRangeColorComponentValue] };
+    Some((current as f32, potential as f32))
+}
+
 struct State {
     instance: wgpu::Instance,
     window: Arc<Window>,
@@ -135,6 +168,12 @@ struct State {
     tone_map_enabled: bool,
     output_scale: f32,
     params_buffer: wgpu::Buffer,
+    #[cfg(target_os = "macos")]
+    edr_probe_frame: u64,
+    #[cfg(target_os = "macos")]
+    edr_last_current: f32,
+    #[cfg(target_os = "macos")]
+    edr_last_potential: f32,
 }
 
 impl State {
@@ -392,6 +431,12 @@ impl State {
             tone_map_enabled,
             output_scale,
             params_buffer,
+            #[cfg(target_os = "macos")]
+            edr_probe_frame: 0,
+            #[cfg(target_os = "macos")]
+            edr_last_current: f32::NAN,
+            #[cfg(target_os = "macos")]
+            edr_last_potential: f32::NAN,
         };
 
         // Configure surface for the first time
@@ -400,6 +445,7 @@ impl State {
         println!("controls: [ = exposure * 0.9, ] = exposure * 1.1");
         println!("controls: T = toggle ACES tone mapping");
         println!("controls: -/= adjust ACES output scale (HDR peak)");
+        println!("controls: F = toggle fullscreen");
         println!(
             "initial params: exposure={:.4} tone_map={} output_scale={:.3}",
             state.exposure, state.tone_map_enabled, state.output_scale
@@ -456,6 +502,40 @@ impl State {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    fn probe_macos_edr_after_present(&mut self) {
+        const EDR_QUERY_INTERVAL_FRAMES: u64 = 30;
+        const EDR_PRINT_DELTA: f32 = 0.01;
+        const EDR_SCALE_DELTA: f32 = 0.005;
+        self.edr_probe_frame += 1;
+        if self.edr_probe_frame % EDR_QUERY_INTERVAL_FRAMES != 0 {
+            return;
+        }
+
+        let Some((current, potential)) = macos_edr_headroom(&self.window) else {
+            return;
+        };
+
+        let new_scale = current.max(1.0);
+        if (new_scale - self.output_scale).abs() > EDR_SCALE_DELTA {
+            self.output_scale = new_scale;
+            self.update_shader_params();
+        }
+
+        let changed = self.edr_last_current.is_nan()
+            || self.edr_last_potential.is_nan()
+            || (current - self.edr_last_current).abs() > EDR_PRINT_DELTA
+            || (potential - self.edr_last_potential).abs() > EDR_PRINT_DELTA;
+        if changed {
+            println!(
+                "macOS EDR headroom: current={:.3} potential={:.3} -> output_scale={:.3}",
+                current, potential, self.output_scale
+            );
+            self.edr_last_current = current;
+            self.edr_last_potential = potential;
+        }
+    }
+
     fn adjust_exposure(&mut self, factor: f32) {
         self.exposure = (self.exposure * factor).max(0.001);
         self.update_shader_params();
@@ -472,6 +552,17 @@ impl State {
         self.output_scale = (self.output_scale * factor).max(0.1);
         self.update_shader_params();
         self.print_render_params();
+    }
+
+    fn toggle_fullscreen(&self) {
+        if self.window.fullscreen().is_some() {
+            self.window.set_fullscreen(None);
+            println!("fullscreen=false");
+        } else {
+            self.window
+                .set_fullscreen(Some(Fullscreen::Borderless(None)));
+            println!("fullscreen=true");
+        }
     }
 
     fn print_picked_color(&self) {
@@ -556,6 +647,8 @@ impl State {
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         surface_texture.present();
+        #[cfg(target_os = "macos")]
+        self.probe_macos_edr_after_present();
     }
 }
 
@@ -617,6 +710,7 @@ impl ApplicationHandler for App {
                     PhysicalKey::Code(KeyCode::KeyT) => state.toggle_tone_map(),
                     PhysicalKey::Code(KeyCode::Minus) => state.adjust_output_scale(0.9),
                     PhysicalKey::Code(KeyCode::Equal) => state.adjust_output_scale(1.1),
+                    PhysicalKey::Code(KeyCode::KeyF) => state.toggle_fullscreen(),
                     _ => {}
                 }
             }
