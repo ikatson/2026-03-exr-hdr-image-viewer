@@ -12,9 +12,9 @@ var channel_sampler: sampler;
 
 struct Params {
     exposure: f32,
-    tone_map_mode: u32, // 0: passthrough, 1: reinhard
+    output_scale: f32,
+    tone_map_mode: u32, // 0: passthrough, 1: ACES
     _pad0: u32,
-    _pad1: u32,
 };
 
 @group(0) @binding(4)
@@ -45,6 +45,15 @@ fn sample_channel(tex: texture_2d<f32>, uv: vec2<f32>) -> f32 {
     return textureSampleLevel(tex, channel_sampler, uv, 0.0).r;
 }
 
+fn aces_fitted(x: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
@@ -53,7 +62,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let b = sample_channel(b_tex, uv);
     let color = vec3<f32>(r, g, b) * params.exposure;
     if params.tone_map_mode == 1u {
-        let mapped = color / (vec3<f32>(1.0) + color);
+        let mapped = aces_fitted(color) * params.output_scale;
         return vec4<f32>(mapped, 1.0);
     }
     return vec4<f32>(color, 1.0);

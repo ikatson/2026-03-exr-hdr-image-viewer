@@ -79,9 +79,9 @@ fn f32_slice_as_bytes(data: &[f32]) -> &[u8] {
 #[derive(Copy, Clone)]
 struct ShaderParams {
     exposure: f32,
-    tone_map_mode: u32, // 0: passthrough, 1: reinhard
+    output_scale: f32,
+    tone_map_mode: u32, // 0: passthrough, 1: ACES
     _pad0: u32,
-    _pad1: u32,
 }
 
 fn shader_params_as_bytes(params: &ShaderParams) -> &[u8] {
@@ -124,6 +124,7 @@ struct State {
     cursor_pos: Option<PhysicalPosition<f64>>,
     exposure: f32,
     tone_map_enabled: bool,
+    output_scale: f32,
     params_buffer: wgpu::Buffer,
 }
 
@@ -287,14 +288,15 @@ impl State {
             ..Default::default()
         });
         let exposure = 1.0f32;
-        let tone_map_enabled = false;
+        let tone_map_enabled = true;
+        let output_scale = 1.6f32;
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shader-params-buffer"),
             contents: shader_params_as_bytes(&ShaderParams {
                 exposure,
+                output_scale,
                 tone_map_mode: u32::from(tone_map_enabled),
                 _pad0: 0,
-                _pad1: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -378,11 +380,20 @@ impl State {
             cursor_pos: None,
             exposure,
             tone_map_enabled,
+            output_scale,
             params_buffer,
         };
 
         // Configure surface for the first time
         state.configure_surface();
+        println!("controls: left-click = pick RGB at cursor");
+        println!("controls: [ = exposure * 0.9, ] = exposure * 1.1");
+        println!("controls: T = toggle ACES tone mapping");
+        println!("controls: -/= adjust ACES output scale (HDR peak)");
+        println!(
+            "initial params: exposure={:.4} tone_map={} output_scale={:.3}",
+            state.exposure, state.tone_map_enabled, state.output_scale
+        );
 
         state
     }
@@ -420,24 +431,37 @@ impl State {
     fn update_shader_params(&self) {
         let params = ShaderParams {
             exposure: self.exposure,
+            output_scale: self.output_scale,
             tone_map_mode: u32::from(self.tone_map_enabled),
             _pad0: 0,
-            _pad1: 0,
         };
         self.queue
             .write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
     }
 
+    fn print_render_params(&self) {
+        println!(
+            "exposure={:.4} tone_map={} output_scale={:.3}",
+            self.exposure, self.tone_map_enabled, self.output_scale
+        );
+    }
+
     fn adjust_exposure(&mut self, factor: f32) {
         self.exposure = (self.exposure * factor).max(0.001);
         self.update_shader_params();
-        println!("exposure={:.4} tone_map={}", self.exposure, self.tone_map_enabled);
+        self.print_render_params();
     }
 
     fn toggle_tone_map(&mut self) {
         self.tone_map_enabled = !self.tone_map_enabled;
         self.update_shader_params();
-        println!("exposure={:.4} tone_map={}", self.exposure, self.tone_map_enabled);
+        self.print_render_params();
+    }
+
+    fn adjust_output_scale(&mut self, factor: f32) {
+        self.output_scale = (self.output_scale * factor).max(0.1);
+        self.update_shader_params();
+        self.print_render_params();
     }
 
     fn print_picked_color(&self) {
@@ -582,6 +606,8 @@ impl ApplicationHandler for App {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
                     PhysicalKey::Code(KeyCode::BracketRight) => state.adjust_exposure(1.1),
                     PhysicalKey::Code(KeyCode::KeyT) => state.toggle_tone_map(),
+                    PhysicalKey::Code(KeyCode::Minus) => state.adjust_output_scale(0.9),
+                    PhysicalKey::Code(KeyCode::Equal) => state.adjust_output_scale(1.1),
                     _ => {}
                 }
             }
