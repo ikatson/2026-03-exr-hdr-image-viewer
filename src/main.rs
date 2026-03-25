@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use clap::Parser;
 use wgpu::{
     BufferUsages, Extent3d, TextureDescriptor, TextureFormat, TextureUsages, util::DeviceExt,
     wgt::TextureViewDescriptor,
@@ -16,6 +17,14 @@ use winit::{
 const PERCENTILES: [f64; 13] = [
     10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 99.0, 99.5, 99.9, 100.0,
 ];
+
+#[derive(Parser, Debug, Clone)]
+#[command(author, version, about)]
+struct Args {
+    /// Input .exr image path
+    #[arg(value_name = "INPUT_EXR")]
+    input: String,
+}
 
 fn print_channel_stats(name: &str, data: &[f32]) {
     let mut min = f32::INFINITY;
@@ -129,7 +138,7 @@ struct State {
 }
 
 impl State {
-    async fn new(display: OwnedDisplayHandle, window: Arc<Window>) -> State {
+    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, exr_path: &str) -> State {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(display),
         ));
@@ -154,10 +163,11 @@ impl State {
 
         let (image_width, image_height, channel_r, channel_g, channel_b, r_view, g_view, b_view) = {
             use ::exr::prelude::*;
-            let img = read_all_data_from_file("images/qwantani_noon_4k.exr").unwrap();
-            let channels = &img.layer_data[0].channel_data.list;
-            let image_width: u32 = img.attributes.display_window.size.0.try_into().unwrap();
-            let image_height: u32 = img.attributes.display_window.size.1.try_into().unwrap();
+            let img = read_all_data_from_file(exr_path).unwrap();
+            let first_layer = &img.layer_data[0];
+            let channels = &first_layer.channel_data.list;
+            let image_width: u32 = first_layer.size.width().try_into().unwrap();
+            let image_height: u32 = first_layer.size.height().try_into().unwrap();
 
             let channel_values = |name: &str| -> Vec<f32> {
                 let channel = channels
@@ -549,9 +559,9 @@ impl State {
     }
 }
 
-#[derive(Default)]
 struct App {
     state: Option<State>,
+    exr_path: String,
 }
 
 impl ApplicationHandler for App {
@@ -566,6 +576,7 @@ impl ApplicationHandler for App {
         let state = pollster::block_on(State::new(
             event_loop.owned_display_handle(),
             window.clone(),
+            &self.exr_path,
         ));
         self.state = Some(state);
 
@@ -620,6 +631,7 @@ fn main() {
     // To change the log level, set the `RUST_LOG` environment variable. See the `env_logger`
     // documentation for more information.
     env_logger::init();
+    let args = Args::parse();
 
     let event_loop = EventLoop::new().unwrap();
 
@@ -635,6 +647,9 @@ fn main() {
     // the background.
     // event_loop.set_control_flow(ControlFlow::Wait);
 
-    let mut app = App::default();
+    let mut app = App {
+        state: None,
+        exr_path: args.input,
+    };
     event_loop.run_app(&mut app).unwrap();
 }
