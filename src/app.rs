@@ -17,7 +17,7 @@ use winit::{
 #[cfg(target_os = "macos")]
 use crate::macos_edr::macos_edr_headroom;
 #[cfg(target_os = "windows")]
-use crate::windows_hdr::windows_hdr_headroom;
+use crate::windows_hdr::windows_hdr_state;
 use crate::{
     picker::GpuPicker, renderer::RenderPipelineState, stats::print_channel_stats,
     text_overlay::TextOverlay,
@@ -83,6 +83,8 @@ struct State {
     edr_last_current: f32,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     edr_last_potential: f32,
+    #[cfg(target_os = "windows")]
+    last_reference_white_scale: f32,
 }
 
 impl State {
@@ -207,6 +209,8 @@ impl State {
             edr_last_current: f32::NAN,
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             edr_last_potential: f32::NAN,
+            #[cfg(target_os = "windows")]
+            last_reference_white_scale: f32::NAN,
         };
 
         state.configure_surface();
@@ -259,29 +263,65 @@ impl State {
         #[cfg(target_os = "macos")]
         let probe = ("macOS EDR", macos_edr_headroom(&self.window));
         #[cfg(target_os = "windows")]
-        let probe = ("Windows HDR", windows_hdr_headroom(&self.window));
+        let probe = windows_hdr_state(&self.window);
 
+        #[cfg(target_os = "macos")]
         let Some((current, potential)) = probe.1 else {
             return;
         };
+        #[cfg(target_os = "windows")]
+        let Some(probe) = probe else {
+            return;
+        };
+        #[cfg(target_os = "windows")]
+        let current = probe.current_headroom;
+        #[cfg(target_os = "windows")]
+        let potential = probe.potential_headroom;
 
         let new_scale = current.max(1.0);
         if (new_scale - self.renderer.output_scale).abs() > EDR_SCALE_DELTA {
             self.renderer.output_scale = new_scale;
             self.renderer.update_shader_params(&self.queue);
         }
+        #[cfg(target_os = "windows")]
+        if (probe.reference_white_scale - self.renderer.reference_white_scale).abs()
+            > EDR_SCALE_DELTA
+        {
+            self.renderer.reference_white_scale = probe.reference_white_scale;
+            self.renderer.update_shader_params(&self.queue);
+        }
 
-        let changed = self.edr_last_current.is_nan()
+        let mut changed = self.edr_last_current.is_nan()
             || self.edr_last_potential.is_nan()
             || (current - self.edr_last_current).abs() > EDR_PRINT_DELTA
             || (potential - self.edr_last_potential).abs() > EDR_PRINT_DELTA;
+        #[cfg(target_os = "windows")]
+        {
+            changed = changed
+                || self.last_reference_white_scale.is_nan()
+                || (probe.reference_white_scale - self.last_reference_white_scale).abs()
+                    > EDR_PRINT_DELTA;
+        }
         if changed {
+            #[cfg(target_os = "macos")]
             println!(
                 "{} headroom: current={:.3} potential={:.3} -> output_scale={:.3}",
                 probe.0, current, potential, self.renderer.output_scale
             );
+            #[cfg(target_os = "windows")]
+            println!(
+                "Windows HDR headroom: current={:.3} potential={:.3} ref_white={:.3} -> output_scale={:.3}",
+                current,
+                potential,
+                self.renderer.reference_white_scale,
+                self.renderer.output_scale
+            );
             self.edr_last_current = current;
             self.edr_last_potential = potential;
+            #[cfg(target_os = "windows")]
+            {
+                self.last_reference_white_scale = probe.reference_white_scale;
+            }
         }
     }
 

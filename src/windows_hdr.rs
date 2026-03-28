@@ -30,7 +30,14 @@ use winit::{
 };
 
 #[cfg(target_os = "windows")]
-pub fn windows_hdr_headroom(window: &Window) -> Option<(f32, f32)> {
+pub struct WindowsHdrState {
+    pub current_headroom: f32,
+    pub potential_headroom: f32,
+    pub reference_white_scale: f32,
+}
+
+#[cfg(target_os = "windows")]
+pub fn windows_hdr_state(window: &Window) -> Option<WindowsHdrState> {
     let output = dxgi_output_for_window(window)?;
     let sdr_white_nits = sdr_white_level_nits(&output.device_name).unwrap_or(80.0);
     let peak_nits = output.desc.MaxLuminance;
@@ -38,15 +45,18 @@ pub fn windows_hdr_headroom(window: &Window) -> Option<(f32, f32)> {
         return None;
     }
 
-    let potential = (peak_nits / sdr_white_nits.max(1.0)).max(1.0);
-    let current = if is_hdr_colorspace(output.desc.ColorSpace) {
-        potential
+    let reference_white_scale = sdr_white_nits / 80.0;
+    let potential_headroom = (peak_nits / sdr_white_nits.max(1.0)).max(1.0);
+    let current_headroom = if is_hdr_colorspace(output.desc.ColorSpace) {
+        potential_headroom
     } else {
         1.0
     };
-    return Some((current * sdr_white_nits / 80., potential));
-    // dbg!((output.desc, &sdr_white_nits, peak_nits, potential, current));
-    Some((current, potential))
+    Some(WindowsHdrState {
+        current_headroom,
+        potential_headroom,
+        reference_white_scale,
+    })
 }
 
 #[cfg(target_os = "windows")]

@@ -30,9 +30,9 @@ impl ToneMapMode {
 #[derive(Copy, Clone)]
 struct ShaderParams {
     exposure: f32,
+    reference_white_scale: f32,
     output_scale: f32,
     tone_map_mode: u32,
-    _pad0: u32,
 }
 
 fn shader_params_as_bytes(params: &ShaderParams) -> &[u8] {
@@ -50,6 +50,7 @@ pub struct RenderPipelineState {
     render_pipeline: wgpu::RenderPipeline,
     params_buffer: wgpu::Buffer,
     pub exposure: f32,
+    pub reference_white_scale: f32,
     pub tone_map_mode: ToneMapMode,
     pub output_scale: f32,
 }
@@ -120,15 +121,16 @@ impl RenderPipelineState {
             ..Default::default()
         });
         let exposure = 1.0f32;
+        let reference_white_scale = 1.0f32;
         let tone_map_mode = ToneMapMode::Aces;
         let output_scale = 1.6f32;
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shader-params-buffer"),
             contents: shader_params_as_bytes(&ShaderParams {
                 exposure,
+                reference_white_scale,
                 output_scale,
                 tone_map_mode: tone_map_mode as u32,
-                _pad0: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
@@ -199,6 +201,7 @@ impl RenderPipelineState {
             render_pipeline,
             params_buffer,
             exposure,
+            reference_white_scale,
             tone_map_mode,
             output_scale,
         }
@@ -207,18 +210,19 @@ impl RenderPipelineState {
     pub fn update_shader_params(&self, queue: &wgpu::Queue) {
         let params = ShaderParams {
             exposure: self.exposure,
+            reference_white_scale: self.reference_white_scale,
             output_scale: self.output_scale,
             tone_map_mode: self.tone_map_mode as u32,
-            _pad0: 0,
         };
         queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
     }
 
     pub fn print_render_params(&self) {
         println!(
-            "exposure={:.4} tone_map={} output_scale={:.3}",
+            "exposure={:.4} tone_map={} ref_white={:.3} output_scale={:.3}",
             self.exposure,
             self.tone_map_mode.label(),
+            self.reference_white_scale,
             self.output_scale
         );
     }

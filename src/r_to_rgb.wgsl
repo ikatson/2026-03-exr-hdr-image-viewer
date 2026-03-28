@@ -12,9 +12,9 @@ var channel_sampler: sampler;
 
 struct Params {
     exposure: f32,
+    reference_white_scale: f32,
     output_scale: f32,
     tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: GT7
-    _pad0: u32,
 };
 
 @group(0) @binding(4)
@@ -119,12 +119,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let b = sample_channel(b_tex, uv);
     let color = vec3<f32>(r, g, b) * params.exposure;
     if params.tone_map_mode == 1u {
-        let mapped = aces_hdr(color, params.output_scale);
+        let mapped = aces_hdr(color, params.output_scale) * params.reference_white_scale;
         return vec4<f32>(mapped, 1.0);
     }
     if params.tone_map_mode == 2u {
-        let mapped = gt7_tonemap(color, params.output_scale);
+        let mapped = gt7_tonemap(color, params.output_scale) * params.reference_white_scale;
         return vec4<f32>(mapped, 1.0);
     }
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(color * params.reference_white_scale, 1.0);
 }
