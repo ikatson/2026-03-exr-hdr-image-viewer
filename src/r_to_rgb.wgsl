@@ -45,13 +45,37 @@ fn sample_channel(tex: texture_2d<f32>, uv: vec2<f32>) -> f32 {
     return textureSampleLevel(tex, channel_sampler, uv, 0.0).r;
 }
 
-fn aces_fitted(x: vec3<f32>) -> vec3<f32> {
+fn rrt_odt_curve(x: f32) -> f32 {
     let a = 2.51;
     let b = 0.03;
     let c = 2.43;
     let d = 0.59;
     let e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+    return (x * (a * x + b)) / (x * (c * x + d) + e);
+}
+
+fn rrt_odt_curve_v(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        rrt_odt_curve(c.x),
+        rrt_odt_curve(c.y),
+        rrt_odt_curve(c.z),
+    );
+}
+
+fn aces_peak_curve(x: f32, peak: f32) -> f32 {
+    let safe_peak = max(peak, 1e-5);
+    let normalized = rrt_odt_curve(x / safe_peak);
+    let peak_norm = 2.43 / 2.51;
+    return normalized * safe_peak * peak_norm;
+}
+
+fn aces_hdr(color: vec3<f32>, peak: f32) -> vec3<f32> {
+    let c = max(color, vec3<f32>(0.0));
+    return vec3<f32>(
+        aces_peak_curve(c.x, peak),
+        aces_peak_curve(c.y, peak),
+        aces_peak_curve(c.z, peak),
+    );
 }
 
 fn gt7_tonemap_component(x: f32, peak: f32) -> f32 {
@@ -95,7 +119,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let b = sample_channel(b_tex, uv);
     let color = vec3<f32>(r, g, b) * params.exposure;
     if params.tone_map_mode == 1u {
-        let mapped = aces_fitted(color) * params.output_scale;
+        let mapped = aces_hdr(color, params.output_scale);
         return vec4<f32>(mapped, 1.0);
     }
     if params.tone_map_mode == 2u {
