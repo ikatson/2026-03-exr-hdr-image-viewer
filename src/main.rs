@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 
 use clap::Parser;
 #[cfg(target_os = "macos")]
@@ -106,6 +106,246 @@ fn shader_params_as_bytes(params: &ShaderParams) -> &[u8] {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct PickParams {
+    uv: [f32; 2],
+    _pad: [f32; 2],
+}
+
+fn pick_params_as_bytes(params: &PickParams) -> &[u8] {
+    unsafe {
+        core::slice::from_raw_parts(
+            (params as *const PickParams).cast::<u8>(),
+            core::mem::size_of::<PickParams>(),
+        )
+    }
+}
+
+struct GpuPicker {
+    pick_params_buffer: wgpu::Buffer,
+    pick_output_buffer: wgpu::Buffer,
+    pick_readback_buffer: wgpu::Buffer,
+    pick_bind_group: wgpu::BindGroup,
+    pick_pipeline: wgpu::ComputePipeline,
+}
+
+impl GpuPicker {
+    fn new(
+        device: &wgpu::Device,
+        r_view: &wgpu::TextureView,
+        g_view: &wgpu::TextureView,
+        b_view: &wgpu::TextureView,
+    ) -> Self {
+        const PICK_RESULT_SIZE: u64 = 16;
+        let pick_params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("pick-params-buffer"),
+            contents: pick_params_as_bytes(&PickParams {
+                uv: [0.0, 0.0],
+                _pad: [0.0, 0.0],
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let pick_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pick-output-buffer"),
+            size: PICK_RESULT_SIZE,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let pick_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pick-readback-buffer"),
+            size: PICK_RESULT_SIZE,
+            usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let pick_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("pick-bind-group-layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let pick_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let pick_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pick-bind-group"),
+            layout: &pick_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(r_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(g_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(b_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&pick_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: pick_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: pick_output_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let pick_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("pick-rgb-shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("pick_rgb.wgsl").into()),
+        });
+        let pick_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pick-pipeline-layout"),
+            bind_group_layouts: &[Some(&pick_bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pick_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("pick-pipeline"),
+            layout: Some(&pick_pipeline_layout),
+            module: &pick_shader,
+            entry_point: Some("cs_main"),
+            cache: None,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        });
+
+        Self {
+            pick_params_buffer,
+            pick_output_buffer,
+            pick_readback_buffer,
+            pick_bind_group,
+            pick_pipeline,
+        }
+    }
+
+    fn pick_rgb(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uv: [f32; 2],
+    ) -> Option<[f32; 3]> {
+        const PICK_RESULT_SIZE: u64 = 16;
+        queue.write_buffer(
+            &self.pick_params_buffer,
+            0,
+            pick_params_as_bytes(&PickParams { uv, _pad: [0.0, 0.0] }),
+        );
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("pick-encoder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("pick-pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pick_pipeline);
+            pass.set_bind_group(0, &self.pick_bind_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(
+            &self.pick_output_buffer,
+            0,
+            &self.pick_readback_buffer,
+            0,
+            PICK_RESULT_SIZE,
+        );
+        queue.submit([encoder.finish()]);
+
+        let slice = self.pick_readback_buffer.slice(..PICK_RESULT_SIZE);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let Ok(Ok(())) = rx.recv() else {
+            return None;
+        };
+
+        let mapped = slice.get_mapped_range();
+        if mapped.len() < 16 {
+            drop(mapped);
+            self.pick_readback_buffer.unmap();
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&mapped[..16]);
+        drop(mapped);
+        self.pick_readback_buffer.unmap();
+
+        let r = f32::from_ne_bytes(bytes[0..4].try_into().unwrap());
+        let g = f32::from_ne_bytes(bytes[4..8].try_into().unwrap());
+        let b = f32::from_ne_bytes(bytes[8..12].try_into().unwrap());
+        Some([r, g, b])
+    }
+}
+
 fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
     let preferred = [TextureFormat::Rgba16Float, TextureFormat::Rgba32Float];
     preferred
@@ -158,12 +398,11 @@ struct State {
     surface_format: wgpu::TextureFormat,
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    picker: GpuPicker,
     image_width: u32,
     image_height: u32,
-    channel_r: Vec<f32>,
-    channel_g: Vec<f32>,
-    channel_b: Vec<f32>,
     cursor_pos: Option<PhysicalPosition<f64>>,
+    left_mouse_down: bool,
     exposure: f32,
     tone_map_enabled: bool,
     output_scale: f32,
@@ -200,7 +439,7 @@ impl State {
             surface_format, cap.present_modes, cap.alpha_modes
         );
 
-        let (image_width, image_height, channel_r, channel_g, channel_b, r_view, g_view, b_view) = {
+        let (image_width, image_height, r_view, g_view, b_view) = {
             use ::exr::prelude::*;
             let img = read_all_data_from_file(exr_path).unwrap();
             let first_layer = &img.layer_data[0];
@@ -270,9 +509,6 @@ impl State {
             (
                 image_width,
                 image_height,
-                channel_r,
-                channel_g,
-                channel_b,
                 r_view,
                 g_view,
                 b_view,
@@ -410,6 +646,7 @@ impl State {
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
         });
+        let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
 
         let state = State {
             instance,
@@ -421,12 +658,11 @@ impl State {
             surface_format,
             bind_group,
             render_pipeline,
+            picker,
             image_width,
             image_height,
-            channel_r,
-            channel_g,
-            channel_b,
             cursor_pos: None,
+            left_mouse_down: false,
             exposure,
             tone_map_enabled,
             output_scale,
@@ -565,12 +801,12 @@ impl State {
         }
     }
 
-    fn print_picked_color(&self) {
+    fn pick_uv_and_coords(&self) -> Option<([f32; 2], usize, usize)> {
         let Some(cursor_pos) = self.cursor_pos else {
-            return;
+            return None;
         };
         if self.size.width == 0 || self.size.height == 0 {
-            return;
+            return None;
         }
 
         let max_x = self.size.width.saturating_sub(1) as f64;
@@ -582,14 +818,18 @@ impl State {
         let v = clamped_y / self.size.height as f64;
         let px = (u * self.image_width.saturating_sub(1) as f64).round() as usize;
         let py = (v * self.image_height.saturating_sub(1) as f64).round() as usize;
-        let idx = py
-            .saturating_mul(self.image_width as usize)
-            .saturating_add(px)
-            .min(self.channel_r.len().saturating_sub(1));
+        Some(([u as f32, v as f32], px, py))
+    }
 
-        let r = self.channel_r[idx];
-        let g = self.channel_g[idx];
-        let b = self.channel_b[idx];
+    fn print_picked_color(&mut self) {
+        let Some((uv, px, py)) = self.pick_uv_and_coords() else {
+            return;
+        };
+        let Some([r, g, b]) = self.picker.pick_rgb(&self.device, &self.queue, uv) else {
+            println!("pick failed");
+            return;
+        };
+        let cursor_pos = self.cursor_pos.unwrap();
         println!(
             "pick window=({:.1},{:.1}) image=({}, {}) rgb=({:.6}, {:.6}, {:.6})",
             cursor_pos.x, cursor_pos.y, px, py, r, g, b
@@ -695,13 +935,24 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 state.update_cursor_pos(position);
+                if state.left_mouse_down {
+                    state.print_picked_color();
+                }
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
             } => {
+                state.left_mouse_down = true;
                 state.print_picked_color();
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => {
+                state.left_mouse_down = false;
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.physical_key {
