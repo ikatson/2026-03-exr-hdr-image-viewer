@@ -523,6 +523,290 @@ impl RenderPipelineState {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct TextOverlayParams {
+    screen_size: [f32; 2],
+    text_size: [f32; 2],
+    offset: [f32; 2],
+    _pad: [f32; 2],
+}
+
+fn text_overlay_params_as_bytes(params: &TextOverlayParams) -> &[u8] {
+    unsafe {
+        core::slice::from_raw_parts(
+            (params as *const TextOverlayParams).cast::<u8>(),
+            core::mem::size_of::<TextOverlayParams>(),
+        )
+    }
+}
+
+struct TextOverlay {
+    width: u32,
+    height: u32,
+    text_texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    params_buffer: wgpu::Buffer,
+    pipeline: wgpu::RenderPipeline,
+    current_text: String,
+}
+
+impl TextOverlay {
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let text_width = 1024u32;
+        let text_height = 96u32;
+        let text_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("text-overlay-texture"),
+            size: Extent3d {
+                width: text_width,
+                height: text_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::R8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[TextureFormat::R8Unorm],
+        });
+        let text_view = text_texture.create_view(&TextureViewDescriptor {
+            label: Some("text-overlay-view"),
+            format: Some(TextureFormat::R8Unorm),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
+        let text_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let params = TextOverlayParams {
+            screen_size: [width as f32, height as f32],
+            text_size: [text_width as f32, text_height as f32],
+            offset: [12.0, 12.0],
+            _pad: [0.0, 0.0],
+        };
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("text-overlay-params"),
+            contents: text_overlay_params_as_bytes(&params),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("text-overlay-bind-group-layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("text-overlay-bind-group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&text_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&text_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("text-overlay-shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("text_overlay.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("text-overlay-pipeline-layout"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text-overlay-pipeline"),
+            layout: Some(&pipeline_layout),
+            cache: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+        });
+
+        let mut overlay = Self {
+            width: text_width,
+            height: text_height,
+            text_texture,
+            bind_group,
+            params_buffer,
+            pipeline,
+            current_text: String::new(),
+        };
+        overlay.set_text(queue, "RGB: (click to sample)");
+        overlay
+    }
+
+    fn glyph_bitmap(c: char) -> [u8; 7] {
+        match c {
+            '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+            '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+            '2' => [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
+            '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
+            '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+            '5' => [0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110],
+            '6' => [0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+            '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
+            '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
+            '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110],
+            'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+            'G' => [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
+            'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+            ':' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000],
+            '(' => [0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010],
+            ')' => [0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000],
+            ',' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00100, 0b01000],
+            '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00110],
+            '-' => [0b00000, 0b00000, 0b00000, 0b01110, 0b00000, 0b00000, 0b00000],
+            ' ' => [0, 0, 0, 0, 0, 0, 0],
+            _ => [0b11111, 0b10001, 0b00100, 0b00100, 0b00100, 0b10001, 0b11111],
+        }
+    }
+
+    fn rasterize_text(&self, text: &str) -> Vec<u8> {
+        let mut pixels = vec![0u8; (self.width * self.height) as usize];
+        let scale = 3usize;
+        let cell_w = 6usize * scale;
+        let start_x = 6usize;
+        let start_y = 8usize;
+        for (i, c) in text.chars().enumerate() {
+            let glyph = Self::glyph_bitmap(c);
+            let gx = start_x + i * cell_w;
+            if gx + 5 * scale >= self.width as usize {
+                break;
+            }
+            for (row, bits) in glyph.iter().enumerate() {
+                for col in 0..5usize {
+                    if (bits >> (4 - col)) & 1 == 1 {
+                        for sy in 0..scale {
+                            for sx in 0..scale {
+                                let x = gx + col * scale + sx;
+                                let y = start_y + row * scale + sy;
+                                if x >= self.width as usize || y >= self.height as usize {
+                                    continue;
+                                }
+                                let idx = y * self.width as usize + x;
+                                pixels[idx] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pixels
+    }
+
+    fn upload_text_texture(&self, queue: &wgpu::Queue, pixels: &[u8]) {
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.text_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.width),
+                rows_per_image: Some(self.height),
+            },
+            Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    fn resize(&mut self, queue: &wgpu::Queue, width: u32, height: u32) {
+        let params = TextOverlayParams {
+            screen_size: [width as f32, height as f32],
+            text_size: [self.width as f32, self.height as f32],
+            offset: [12.0, 12.0],
+            _pad: [0.0, 0.0],
+        };
+        queue.write_buffer(&self.params_buffer, 0, text_overlay_params_as_bytes(&params));
+    }
+
+    fn set_text(&mut self, queue: &wgpu::Queue, text: &str) {
+        if self.current_text == text {
+            return;
+        }
+        self.current_text = text.to_string();
+        let pixels = self.rasterize_text(text);
+        self.upload_text_texture(queue, &pixels);
+    }
+
+    fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.draw(0..6, 0..1);
+    }
+}
+
 fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
     let preferred = [TextureFormat::Rgba16Float, TextureFormat::Rgba32Float];
     preferred
@@ -575,6 +859,7 @@ struct State {
     surface_format: wgpu::TextureFormat,
     renderer: RenderPipelineState,
     picker: GpuPicker,
+    text_overlay: TextOverlay,
     image_width: u32,
     image_height: u32,
     cursor_pos: Option<PhysicalPosition<f64>>,
@@ -689,6 +974,13 @@ impl State {
 
         let renderer = RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
         let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
+        let text_overlay = TextOverlay::new(
+            &device,
+            &queue,
+            surface_format,
+            size.width.max(1),
+            size.height.max(1),
+        );
 
         let state = State {
             instance,
@@ -700,6 +992,7 @@ impl State {
             surface_format,
             renderer,
             picker,
+            text_overlay,
             image_width,
             image_height,
             cursor_pos: None,
@@ -751,6 +1044,11 @@ impl State {
 
         // reconfigure the surface
         self.configure_surface();
+        self.text_overlay.resize(
+            &self.queue,
+            self.size.width.max(1),
+            self.size.height.max(1),
+        );
     }
 
     fn update_cursor_pos(&mut self, position: PhysicalPosition<f64>) {
@@ -848,6 +1146,8 @@ impl State {
             println!("pick failed");
             return;
         };
+        self.text_overlay
+            .set_text(&self.queue, &format!("RGB: ({:.6}, {:.6}, {:.6})", r, g, b));
         let cursor_pos = self.cursor_pos.unwrap();
         println!(
             "pick window=({:.1},{:.1}) image=({}, {}) rgb=({:.6}, {:.6}, {:.6})",
@@ -878,7 +1178,6 @@ impl State {
         let texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -900,6 +1199,7 @@ impl State {
         renderpass.set_pipeline(&self.renderer.render_pipeline);
         renderpass.set_bind_group(0, &self.renderer.bind_group, &[]);
         renderpass.draw(0..3, 0..1);
+        self.text_overlay.render(&mut renderpass);
         drop(renderpass);
 
         // Submit the command in the queue to execute
