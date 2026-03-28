@@ -346,6 +346,183 @@ impl GpuPicker {
     }
 }
 
+struct RenderPipelineState {
+    bind_group: wgpu::BindGroup,
+    render_pipeline: wgpu::RenderPipeline,
+    params_buffer: wgpu::Buffer,
+    exposure: f32,
+    tone_map_enabled: bool,
+    output_scale: f32,
+}
+
+impl RenderPipelineState {
+    fn new(
+        device: &wgpu::Device,
+        surface_format: TextureFormat,
+        r_view: &wgpu::TextureView,
+        g_view: &wgpu::TextureView,
+        b_view: &wgpu::TextureView,
+    ) -> Self {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rgb-texture-bind-group-layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let exposure = 1.0f32;
+        let tone_map_enabled = true;
+        let output_scale = 1.6f32;
+        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("shader-params-buffer"),
+            contents: shader_params_as_bytes(&ShaderParams {
+                exposure,
+                output_scale,
+                tone_map_mode: u32::from(tone_map_enabled),
+                _pad0: 0,
+            }),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rgb-texture-bind-group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(r_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(g_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(b_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("r-to-rgb-shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("r_to_rgb.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("r-to-rgb-pipeline-layout"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("r-to-rgb-pipeline"),
+            layout: Some(&pipeline_layout),
+            cache: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+        });
+
+        Self {
+            bind_group,
+            render_pipeline,
+            params_buffer,
+            exposure,
+            tone_map_enabled,
+            output_scale,
+        }
+    }
+
+    fn update_shader_params(&self, queue: &wgpu::Queue) {
+        let params = ShaderParams {
+            exposure: self.exposure,
+            output_scale: self.output_scale,
+            tone_map_mode: u32::from(self.tone_map_enabled),
+            _pad0: 0,
+        };
+        queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
+    }
+
+    fn print_render_params(&self) {
+        println!(
+            "exposure={:.4} tone_map={} output_scale={:.3}",
+            self.exposure, self.tone_map_enabled, self.output_scale
+        );
+    }
+}
+
 fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
     let preferred = [TextureFormat::Rgba16Float, TextureFormat::Rgba32Float];
     preferred
@@ -396,17 +573,12 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     surface: wgpu::Surface<'static>,
     surface_format: wgpu::TextureFormat,
-    bind_group: wgpu::BindGroup,
-    render_pipeline: wgpu::RenderPipeline,
+    renderer: RenderPipelineState,
     picker: GpuPicker,
     image_width: u32,
     image_height: u32,
     cursor_pos: Option<PhysicalPosition<f64>>,
     left_mouse_down: bool,
-    exposure: f32,
-    tone_map_enabled: bool,
-    output_scale: f32,
-    params_buffer: wgpu::Buffer,
     #[cfg(target_os = "macos")]
     edr_probe_frame: u64,
     #[cfg(target_os = "macos")]
@@ -515,137 +687,7 @@ impl State {
             )
         };
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("rgb-texture-bind-group-layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
-        let exposure = 1.0f32;
-        let tone_map_enabled = true;
-        let output_scale = 1.6f32;
-        let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("shader-params-buffer"),
-            contents: shader_params_as_bytes(&ShaderParams {
-                exposure,
-                output_scale,
-                tone_map_mode: u32::from(tone_map_enabled),
-                _pad0: 0,
-            }),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("rgb-texture-bind-group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&r_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&g_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&b_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: params_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("r-to-rgb-shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("r_to_rgb.wgsl").into()),
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("r-to-rgb-pipeline-layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("r-to-rgb-pipeline"),
-            layout: Some(&pipeline_layout),
-            cache: None,
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-        });
+        let renderer = RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
         let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
 
         let state = State {
@@ -656,17 +698,12 @@ impl State {
             size,
             surface,
             surface_format,
-            bind_group,
-            render_pipeline,
+            renderer,
             picker,
             image_width,
             image_height,
             cursor_pos: None,
             left_mouse_down: false,
-            exposure,
-            tone_map_enabled,
-            output_scale,
-            params_buffer,
             #[cfg(target_os = "macos")]
             edr_probe_frame: 0,
             #[cfg(target_os = "macos")]
@@ -684,7 +721,7 @@ impl State {
         println!("controls: F = toggle fullscreen");
         println!(
             "initial params: exposure={:.4} tone_map={} output_scale={:.3}",
-            state.exposure, state.tone_map_enabled, state.output_scale
+            state.renderer.exposure, state.renderer.tone_map_enabled, state.renderer.output_scale
         );
 
         state
@@ -720,24 +757,6 @@ impl State {
         self.cursor_pos = Some(position);
     }
 
-    fn update_shader_params(&self) {
-        let params = ShaderParams {
-            exposure: self.exposure,
-            output_scale: self.output_scale,
-            tone_map_mode: u32::from(self.tone_map_enabled),
-            _pad0: 0,
-        };
-        self.queue
-            .write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
-    }
-
-    fn print_render_params(&self) {
-        println!(
-            "exposure={:.4} tone_map={} output_scale={:.3}",
-            self.exposure, self.tone_map_enabled, self.output_scale
-        );
-    }
-
     #[cfg(target_os = "macos")]
     fn probe_macos_edr_after_present(&mut self) {
         const EDR_QUERY_INTERVAL_FRAMES: u64 = 30;
@@ -753,9 +772,9 @@ impl State {
         };
 
         let new_scale = current.max(1.0);
-        if (new_scale - self.output_scale).abs() > EDR_SCALE_DELTA {
-            self.output_scale = new_scale;
-            self.update_shader_params();
+        if (new_scale - self.renderer.output_scale).abs() > EDR_SCALE_DELTA {
+            self.renderer.output_scale = new_scale;
+            self.renderer.update_shader_params(&self.queue);
         }
 
         let changed = self.edr_last_current.is_nan()
@@ -765,7 +784,7 @@ impl State {
         if changed {
             println!(
                 "macOS EDR headroom: current={:.3} potential={:.3} -> output_scale={:.3}",
-                current, potential, self.output_scale
+                current, potential, self.renderer.output_scale
             );
             self.edr_last_current = current;
             self.edr_last_potential = potential;
@@ -773,21 +792,21 @@ impl State {
     }
 
     fn adjust_exposure(&mut self, factor: f32) {
-        self.exposure = (self.exposure * factor).max(0.001);
-        self.update_shader_params();
-        self.print_render_params();
+        self.renderer.exposure = (self.renderer.exposure * factor).max(0.001);
+        self.renderer.update_shader_params(&self.queue);
+        self.renderer.print_render_params();
     }
 
     fn toggle_tone_map(&mut self) {
-        self.tone_map_enabled = !self.tone_map_enabled;
-        self.update_shader_params();
-        self.print_render_params();
+        self.renderer.tone_map_enabled = !self.renderer.tone_map_enabled;
+        self.renderer.update_shader_params(&self.queue);
+        self.renderer.print_render_params();
     }
 
     fn adjust_output_scale(&mut self, factor: f32) {
-        self.output_scale = (self.output_scale * factor).max(0.1);
-        self.update_shader_params();
-        self.print_render_params();
+        self.renderer.output_scale = (self.renderer.output_scale * factor).max(0.1);
+        self.renderer.update_shader_params(&self.queue);
+        self.renderer.print_render_params();
     }
 
     fn toggle_fullscreen(&self) {
@@ -878,8 +897,8 @@ impl State {
             multiview_mask: None,
         });
 
-        renderpass.set_pipeline(&self.render_pipeline);
-        renderpass.set_bind_group(0, &self.bind_group, &[]);
+        renderpass.set_pipeline(&self.renderer.render_pipeline);
+        renderpass.set_bind_group(0, &self.renderer.bind_group, &[]);
         renderpass.draw(0..3, 0..1);
         drop(renderpass);
 
