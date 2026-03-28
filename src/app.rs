@@ -212,13 +212,11 @@ impl State {
         state.configure_surface();
         println!("controls: left-click = pick RGB at cursor");
         println!("controls: [ = exposure * 0.9, ] = exposure * 1.1");
-        println!("controls: T = toggle ACES tone mapping");
-        println!("controls: -/= adjust ACES output scale (HDR peak)");
+        println!("controls: T = cycle tone mapping (off -> ACES -> GT7)");
+        println!("controls: -/= adjust tone mapper output scale (HDR peak)");
         println!("controls: F = toggle fullscreen");
-        println!(
-            "initial params: exposure={:.4} tone_map={} output_scale={:.3}",
-            state.renderer.exposure, state.renderer.tone_map_enabled, state.renderer.output_scale
-        );
+        print!("initial params: ");
+        state.renderer.print_render_params();
 
         state
     }
@@ -258,8 +256,6 @@ impl State {
         const EDR_SCALE_DELTA: f32 = 0.005;
         self.edr_probe_frame += 1;
 
-        return;
-
         #[cfg(target_os = "macos")]
         let probe = ("macOS EDR", macos_edr_headroom(&self.window));
         #[cfg(target_os = "windows")]
@@ -295,8 +291,8 @@ impl State {
         self.renderer.print_render_params();
     }
 
-    fn toggle_tone_map(&mut self) {
-        self.renderer.tone_map_enabled = !self.renderer.tone_map_enabled;
+    fn cycle_tone_map(&mut self) {
+        self.renderer.tone_map_mode = self.renderer.tone_map_mode.next();
         self.renderer.update_shader_params(&self.queue);
         self.renderer.print_render_params();
     }
@@ -465,7 +461,7 @@ impl ApplicationHandler for App {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
                     PhysicalKey::Code(KeyCode::BracketRight) => state.adjust_exposure(1.1),
-                    PhysicalKey::Code(KeyCode::KeyT) => state.toggle_tone_map(),
+                    PhysicalKey::Code(KeyCode::KeyT) => state.cycle_tone_map(),
                     PhysicalKey::Code(KeyCode::Minus) => state.adjust_output_scale(0.9),
                     PhysicalKey::Code(KeyCode::Equal) => state.adjust_output_scale(1.1),
                     PhysicalKey::Code(KeyCode::KeyF) => state.toggle_fullscreen(),

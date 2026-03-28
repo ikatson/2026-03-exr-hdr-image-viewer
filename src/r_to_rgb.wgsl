@@ -13,7 +13,7 @@ var channel_sampler: sampler;
 struct Params {
     exposure: f32,
     output_scale: f32,
-    tone_map_mode: u32, // 0: passthrough, 1: ACES
+    tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: GT7
     _pad0: u32,
 };
 
@@ -54,6 +54,39 @@ fn aces_fitted(x: vec3<f32>) -> vec3<f32> {
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn gt7_tonemap_component(x: f32, peak: f32) -> f32 {
+    let p = peak;
+    let a = 1.0;
+    let m = 0.22;
+    let l = 0.4;
+    let c = 1.33;
+    let b = 0.0;
+
+    let l0 = ((p - m) * l) / a;
+    let l1 = m + (1.0 - m) / a;
+    let s0 = m + l0;
+    let s1 = m + a * l0;
+    let c2 = (a * p) / max(p - s1, 1e-5);
+    let cp = -c2 / p;
+
+    let w0 = 1.0 - smoothstep(0.0, m, x);
+    let w2 = select(0.0, 1.0, x >= m + l0);
+    let w1 = 1.0 - w0 - w2;
+
+    let toe = m * pow(max(x, 0.0) / max(m, 1e-5), c) + b;
+    let linear = m + a * (x - m);
+    let shoulder = p - (p - s1) * exp(cp * (x - s0));
+    return toe * w0 + linear * w1 + shoulder * w2;
+}
+
+fn gt7_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
+    return vec3<f32>(
+        gt7_tonemap_component(x.r, peak),
+        gt7_tonemap_component(x.g, peak),
+        gt7_tonemap_component(x.b, peak),
+    );
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
@@ -63,6 +96,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let color = vec3<f32>(r, g, b) * params.exposure;
     if params.tone_map_mode == 1u {
         let mapped = aces_fitted(color) * params.output_scale;
+        return vec4<f32>(mapped, 1.0);
+    }
+    if params.tone_map_mode == 2u {
+        let mapped = gt7_tonemap(color, params.output_scale);
         return vec4<f32>(mapped, 1.0);
     }
     return vec4<f32>(color, 1.0);

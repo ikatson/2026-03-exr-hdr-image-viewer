@@ -1,5 +1,31 @@
 use wgpu::{BufferUsages, TextureFormat, util::DeviceExt};
 
+#[repr(u32)]
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum ToneMapMode {
+    Off = 0,
+    Aces = 1,
+    GranTurismo7 = 2,
+}
+
+impl ToneMapMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Aces => "aces",
+            Self::GranTurismo7 => "gt7",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Off => Self::Aces,
+            Self::Aces => Self::GranTurismo7,
+            Self::GranTurismo7 => Self::Off,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct ShaderParams {
@@ -24,7 +50,7 @@ pub struct RenderPipelineState {
     render_pipeline: wgpu::RenderPipeline,
     params_buffer: wgpu::Buffer,
     pub exposure: f32,
-    pub tone_map_enabled: bool,
+    pub tone_map_mode: ToneMapMode,
     pub output_scale: f32,
 }
 
@@ -94,14 +120,14 @@ impl RenderPipelineState {
             ..Default::default()
         });
         let exposure = 1.0f32;
-        let tone_map_enabled = true;
+        let tone_map_mode = ToneMapMode::Aces;
         let output_scale = 1.6f32;
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shader-params-buffer"),
             contents: shader_params_as_bytes(&ShaderParams {
                 exposure,
                 output_scale,
-                tone_map_mode: u32::from(tone_map_enabled),
+                tone_map_mode: tone_map_mode as u32,
                 _pad0: 0,
             }),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
@@ -173,7 +199,7 @@ impl RenderPipelineState {
             render_pipeline,
             params_buffer,
             exposure,
-            tone_map_enabled,
+            tone_map_mode,
             output_scale,
         }
     }
@@ -182,7 +208,7 @@ impl RenderPipelineState {
         let params = ShaderParams {
             exposure: self.exposure,
             output_scale: self.output_scale,
-            tone_map_mode: u32::from(self.tone_map_enabled),
+            tone_map_mode: self.tone_map_mode as u32,
             _pad0: 0,
         };
         queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
@@ -191,7 +217,9 @@ impl RenderPipelineState {
     pub fn print_render_params(&self) {
         println!(
             "exposure={:.4} tone_map={} output_scale={:.3}",
-            self.exposure, self.tone_map_enabled, self.output_scale
+            self.exposure,
+            self.tone_map_mode.label(),
+            self.output_scale
         );
     }
 
