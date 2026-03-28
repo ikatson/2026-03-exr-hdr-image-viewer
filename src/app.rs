@@ -3,10 +3,8 @@ use std::sync::Arc;
 use std::thread;
 
 use exr::prelude::{FlatSamples, read_all_data_from_file};
-use wgpu::{
-    Extent3d, TextureDescriptor, TextureFormat, TextureUsages, wgt::TextureViewDescriptor,
-};
 use wgpu::util::DeviceExt;
+use wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages, wgt::TextureViewDescriptor};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalPosition,
@@ -17,13 +15,15 @@ use winit::{
 };
 
 #[cfg(target_os = "macos")]
-use dispatch2::{DispatchQoS, DispatchQueue, GlobalQueueIdentifier};
-#[cfg(target_os = "macos")]
 use crate::macos_edr::macos_edr_headroom;
+#[cfg(target_os = "windows")]
+use crate::windows_hdr::windows_hdr_headroom;
 use crate::{
     picker::GpuPicker, renderer::RenderPipelineState, stats::print_channel_stats,
     text_overlay::TextOverlay,
 };
+#[cfg(target_os = "macos")]
+use dispatch2::{DispatchQoS, DispatchQueue, GlobalQueueIdentifier};
 
 fn f32_slice_as_bytes(data: &[f32]) -> &[u8] {
     // Reinterpret f32 channel values as raw bytes for GPU upload.
@@ -77,11 +77,11 @@ struct State {
     text_overlay: TextOverlay,
     cursor_pos: Option<PhysicalPosition<f64>>,
     left_mouse_down: bool,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     edr_probe_frame: u64,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     edr_last_current: f32,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     edr_last_potential: f32,
 }
 
@@ -201,11 +201,11 @@ impl State {
             text_overlay,
             cursor_pos: None,
             left_mouse_down: false,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             edr_probe_frame: 0,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             edr_last_current: f32::NAN,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             edr_last_potential: f32::NAN,
         };
 
@@ -252,13 +252,20 @@ impl State {
         self.cursor_pos = Some(position);
     }
 
-    #[cfg(target_os = "macos")]
-    fn probe_macos_edr_after_present(&mut self) {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn probe_platform_hdr_after_present(&mut self) {
         const EDR_PRINT_DELTA: f32 = 0.01;
         const EDR_SCALE_DELTA: f32 = 0.005;
         self.edr_probe_frame += 1;
 
-        let Some((current, potential)) = macos_edr_headroom(&self.window) else {
+        return;
+
+        #[cfg(target_os = "macos")]
+        let probe = ("macOS EDR", macos_edr_headroom(&self.window));
+        #[cfg(target_os = "windows")]
+        let probe = ("Windows HDR", windows_hdr_headroom(&self.window));
+
+        let Some((current, potential)) = probe.1 else {
             return;
         };
 
@@ -274,8 +281,8 @@ impl State {
             || (potential - self.edr_last_potential).abs() > EDR_PRINT_DELTA;
         if changed {
             println!(
-                "macOS EDR headroom: current={:.3} potential={:.3} -> output_scale={:.3}",
-                current, potential, self.renderer.output_scale
+                "{} headroom: current={:.3} potential={:.3} -> output_scale={:.3}",
+                probe.0, current, potential, self.renderer.output_scale
             );
             self.edr_last_current = current;
             self.edr_last_potential = potential;
@@ -382,8 +389,8 @@ impl State {
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         surface_texture.present();
-        #[cfg(target_os = "macos")]
-        self.probe_macos_edr_after_present();
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        self.probe_platform_hdr_after_present();
     }
 }
 

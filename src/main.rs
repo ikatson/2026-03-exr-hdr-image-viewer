@@ -4,6 +4,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 mod app;
 #[cfg(target_os = "macos")]
 mod macos_edr;
+#[cfg(target_os = "windows")]
+mod windows_hdr;
 mod picker;
 mod renderer;
 mod stats;
