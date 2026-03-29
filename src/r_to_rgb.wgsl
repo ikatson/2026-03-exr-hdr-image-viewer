@@ -12,7 +12,7 @@ var channel_sampler: sampler;
 
 struct Params {
     exposure: f32,
-    sdr_white_vs_input: f32, // on windows, this is > 1. means we need to scale the output at the end
+    sdr_white_vs_input: f32, // on windows, this is > 1. means we need to scale the output at the end so that 1.0 = 80 nits
     peak_luma_vs_sdr_white: f32, // peak luma relative to 1. (SDR white). For peak luma computations.
     tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: Reno ACES, 3: GT7, 4: Reinhard, 5: Neutwo
 };
@@ -106,7 +106,7 @@ const RENO_ACES_THR_CYAN: f32 = 0.815;
 const RENO_ACES_THR_MAGENTA: f32 = 0.803;
 const RENO_ACES_THR_YELLOW: f32 = 0.880;
 const RENO_ACES_GAMUT_PWR: f32 = 1.2;
-const RENO_REFERENCE_WHITE_NITS: f32 = 100.0;
+const RENO_REFERENCE_WHITE_NITS: f32 = 240.0;
 
 fn reno_bt709_to_ap1(c: vec3<f32>) -> vec3<f32> {
     return mul_rows3(
@@ -394,15 +394,25 @@ fn reno_aces_hdr(color: vec3<f32>, peak: f32) -> vec3<f32> {
     let min_y = 0.0001;
     let safe_peak = max(peak, 1.0);
     let max_y = safe_peak * RENO_REFERENCE_WHITE_NITS;
-    // RenoDX's ACES ODT operates in display luminance units; this renderer's
-    // contract is 1.0 == SDR white, so convert in and out around the port.
-    var c =
-        reno_bt709_to_ap1(max(color, vec3<f32>(0.0)) * RENO_REFERENCE_WHITE_NITS);
+    let config = reno_create_odt_config(min_y, max_y);
+
+    var c = reno_bt709_to_ap1(max(color, vec3<f32>(0.0)) * RENO_REFERENCE_WHITE_NITS);
     c = reno_gamut_compress(c);
     c = reno_ap1_to_ap0(c);
     c = reno_rrt(c);
-    c = reno_odt(c, min_y, max_y);
-    return max(c / RENO_REFERENCE_WHITE_NITS, vec3<f32>(0.0));
+    c = clamp(
+        vec3<f32>(
+            reno_ssts(c.r, config),
+            reno_ssts(c.g, config),
+            reno_ssts(c.b, config),
+        ),
+        vec3<f32>(0.0),
+        vec3<f32>(65535.0),
+    );
+    c = reno_ap1_to_bt709(c);
+
+    let sdr_white_out = reno_ssts(RENO_REFERENCE_WHITE_NITS, config);
+    return max(c / sdr_white_out, vec3<f32>(0.0));
 }
 
 fn gt7_tonemap_component(x: f32, peak: f32) -> f32 {
@@ -478,6 +488,9 @@ fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
     }
     if tone_map_mode == 4u {
         return aces_hdr(color, peak);
+    }
+    if tone_map_mode == 5u {
+        return reno_aces_hdr(color, peak);
     }
     return color;
 }

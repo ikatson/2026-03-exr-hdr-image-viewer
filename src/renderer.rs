@@ -10,26 +10,18 @@ pub enum ToneMapMode {
     GranTurismo7 = 2,
     Reinhard = 3,
     Aces = 4,
+    RenoAces = 5,
 }
 
 impl ToneMapMode {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Aces => "aces",
-            Self::GranTurismo7 => "gt7",
-            Self::Reinhard => "reinhard",
-            Self::Neutwo => "neutwo",
-        }
-    }
-
     pub fn next(self) -> Self {
         match self {
             ToneMapMode::Off => ToneMapMode::Neutwo,
             ToneMapMode::Neutwo => ToneMapMode::GranTurismo7,
             ToneMapMode::GranTurismo7 => ToneMapMode::Reinhard,
             ToneMapMode::Reinhard => ToneMapMode::Aces,
-            ToneMapMode::Aces => ToneMapMode::Off,
+            ToneMapMode::Aces => ToneMapMode::RenoAces,
+            ToneMapMode::RenoAces => ToneMapMode::Off,
         }
     }
 }

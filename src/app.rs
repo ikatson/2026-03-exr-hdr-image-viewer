@@ -200,8 +200,7 @@ impl State {
         state.configure_surface();
         println!("controls: left-click = pick RGB at cursor");
         println!("controls: [ = exposure * 0.9, ] = exposure * 1.1");
-        println!("controls: T = cycle tone mapping (off -> ACES -> RENO -> GT7 -> RH -> NEU)");
-        println!("controls: -/= adjust tone mapper output scale (HDR peak)");
+        println!("controls: T = cycle tone mapping");
         println!("controls: F = toggle fullscreen");
         let mut state = state;
         state.refresh_overlay_text();
@@ -245,6 +244,7 @@ impl State {
             crate::renderer::ToneMapMode::GranTurismo7 => "GT7",
             crate::renderer::ToneMapMode::Reinhard => "RH",
             crate::renderer::ToneMapMode::Neutwo => "NEU",
+            crate::renderer::ToneMapMode::RenoAces => "RENO-ACES",
         }
     }
 
@@ -283,12 +283,6 @@ impl State {
         self.renderer.tone_map_mode = self.renderer.tone_map_mode.next();
         self.renderer.update_shader_params(&self.queue);
         self.refresh_overlay_text();
-    }
-
-    fn adjust_output_scale(&mut self, factor: f32) {
-        // self.renderer.output_scale = (self.renderer.output_scale * factor).max(0.1);
-        // self.renderer.update_shader_params(&self.queue);
-        // self.refresh_overlay_text();
     }
 
     fn toggle_fullscreen(&self) {
@@ -453,8 +447,6 @@ impl ApplicationHandler for App {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
                     PhysicalKey::Code(KeyCode::BracketRight) => state.adjust_exposure(1.1),
                     PhysicalKey::Code(KeyCode::KeyT) => state.cycle_tone_map(),
-                    PhysicalKey::Code(KeyCode::Minus) => state.adjust_output_scale(0.9),
-                    PhysicalKey::Code(KeyCode::Equal) => state.adjust_output_scale(1.1),
                     PhysicalKey::Code(KeyCode::KeyF) => state.toggle_fullscreen(),
                     _ => {}
                 }
