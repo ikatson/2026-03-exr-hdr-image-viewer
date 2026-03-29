@@ -106,6 +106,7 @@ const RENO_ACES_THR_CYAN: f32 = 0.815;
 const RENO_ACES_THR_MAGENTA: f32 = 0.803;
 const RENO_ACES_THR_YELLOW: f32 = 0.880;
 const RENO_ACES_GAMUT_PWR: f32 = 1.2;
+const RENO_REFERENCE_WHITE_NITS: f32 = 100.0;
 
 fn reno_bt709_to_ap1(c: vec3<f32>) -> vec3<f32> {
     return mul_rows3(
@@ -391,13 +392,17 @@ fn reno_odt(rgb_pre: vec3<f32>, min_y: f32, max_y: f32) -> vec3<f32> {
 
 fn reno_aces_hdr(color: vec3<f32>, peak: f32) -> vec3<f32> {
     let min_y = 0.0001;
-    let max_y = max(peak, min_y + 1e-5);
-    var c = reno_bt709_to_ap1(max(color, vec3<f32>(0.0)));
+    let safe_peak = max(peak, 1.0);
+    let max_y = safe_peak * RENO_REFERENCE_WHITE_NITS;
+    // RenoDX's ACES ODT operates in display luminance units; this renderer's
+    // contract is 1.0 == SDR white, so convert in and out around the port.
+    var c =
+        reno_bt709_to_ap1(max(color, vec3<f32>(0.0)) * RENO_REFERENCE_WHITE_NITS);
     c = reno_gamut_compress(c);
     c = reno_ap1_to_ap0(c);
     c = reno_rrt(c);
     c = reno_odt(c, min_y, max_y);
-    return max(c, vec3<f32>(0.0));
+    return max(c / RENO_REFERENCE_WHITE_NITS, vec3<f32>(0.0));
 }
 
 fn gt7_tonemap_component(x: f32, peak: f32) -> f32 {
