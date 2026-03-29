@@ -26,31 +26,21 @@ use winit::{
     window::Window,
 };
 
-pub struct WindowsHdrState {
-    pub current_headroom: f32,
-    pub potential_headroom: f32,
-    pub reference_white_scale: f32,
-}
+use crate::display_hdr::DisplayHDR;
 
 pub fn windows_hdr_state(window: &Window) -> Option<DisplayHDR> {
     let output = dxgi_output_for_window(window)?;
-    let sdr_white_nits = sdr_white_level_nits(&output.device_name).unwrap_or(80.0);
+    // dbg!(&output.desc);
+    let sdr_white_nits = sdr_white_level_nits(&output.device_name).unwrap();
     let peak_nits = output.desc.MaxLuminance;
-    if !peak_nits.is_finite() || peak_nits <= 0.0 {
-        return None;
-    }
 
-    let reference_white_scale = sdr_white_nits / 80.0;
-    let potential_headroom = (peak_nits / sdr_white_nits.max(1.0)).max(1.0);
-    let current_headroom = if is_hdr_colorspace(output.desc.ColorSpace) {
-        potential_headroom
-    } else {
-        1.0
-    };
-    Some(WindowsHdrState {
-        current_headroom,
-        potential_headroom,
-        reference_white_scale,
+    // dbg!((sdr_white_nits, peak_nits));
+
+    let sdr_white_vs_input = sdr_white_nits / 80.0;
+    let peak_luma_vs_sdr_white = peak_nits / sdr_white_nits;
+    Some(DisplayHDR {
+        sdr_white_vs_input,
+        peak_luma_vs_sdr_white,
     })
 }
 
@@ -204,13 +194,6 @@ fn source_device_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<String> {
     }
 
     Some(wide_to_string(&source_name.viewGdiDeviceName))
-}
-
-fn is_hdr_colorspace(
-    color_space: windows::Win32::Graphics::Dxgi::Common::DXGI_COLOR_SPACE_TYPE,
-) -> bool {
-    color_space == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
-        || color_space == DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020
 }
 
 fn intersection_area(a: RECT, b: RECT) -> i64 {

@@ -170,7 +170,11 @@ impl State {
 
             (r_view, g_view, b_view)
         };
-        let renderer = RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
+        let mut renderer =
+            RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
+        let hdr = platform::get_hdr_params(&window).unwrap();
+        renderer.update_shader_params(&queue);
+        renderer.hdr = hdr;
         let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
         let text_overlay = TextOverlay::new(
             &device,
@@ -193,7 +197,7 @@ impl State {
             cursor_pos: None,
             picked_rgb: None,
             left_mouse_down: false,
-            hdr: platform::get_hdr_params(&window).unwrap(),
+            hdr,
             window,
         };
 
@@ -344,6 +348,7 @@ impl State {
             }
         };
         self.probe_display_hdr();
+
         let texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
