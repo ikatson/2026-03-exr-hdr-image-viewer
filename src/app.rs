@@ -76,6 +76,7 @@ struct State {
     picker: GpuPicker,
     text_overlay: TextOverlay,
     cursor_pos: Option<PhysicalPosition<f64>>,
+    picked_rgb: Option<[f32; 3]>,
     left_mouse_down: bool,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     edr_probe_frame: u64,
@@ -202,6 +203,7 @@ impl State {
             picker,
             text_overlay,
             cursor_pos: None,
+            picked_rgb: None,
             left_mouse_down: false,
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             edr_probe_frame: 0,
@@ -216,11 +218,11 @@ impl State {
         state.configure_surface();
         println!("controls: left-click = pick RGB at cursor");
         println!("controls: [ = exposure * 0.9, ] = exposure * 1.1");
-        println!("controls: T = cycle tone mapping (off -> ACES -> GT7)");
+        println!("controls: T = cycle tone mapping (off -> ACES -> RENO -> GT7 -> RH -> NEU)");
         println!("controls: -/= adjust tone mapper output scale (HDR peak)");
         println!("controls: F = toggle fullscreen");
-        print!("initial params: ");
-        state.renderer.print_render_params();
+        let mut state = state;
+        state.refresh_overlay_text();
 
         state
     }
@@ -235,8 +237,8 @@ impl State {
             format: self.surface_format,
             view_formats: vec![self.surface_format],
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            width: self.size.width,
-            height: self.size.height,
+            width: self.size.width.max(1),
+            height: self.size.height.max(1),
             desired_maximum_frame_latency: 2,
             present_mode: wgpu::PresentMode::AutoVsync,
         };
@@ -252,6 +254,31 @@ impl State {
 
     fn update_cursor_pos(&mut self, position: PhysicalPosition<f64>) {
         self.cursor_pos = Some(position);
+    }
+
+    fn tone_map_label(&self) -> &'static str {
+        match self.renderer.tone_map_mode {
+            crate::renderer::ToneMapMode::Off => "OFF",
+            crate::renderer::ToneMapMode::Aces => "ACES",
+            crate::renderer::ToneMapMode::RenoAces => "RENO",
+            crate::renderer::ToneMapMode::GranTurismo7 => "GT7",
+            crate::renderer::ToneMapMode::Reinhard => "RH",
+            crate::renderer::ToneMapMode::Neutwo => "NEU",
+        }
+    }
+
+    fn refresh_overlay_text(&mut self) {
+        let mut text = format!(
+            "EXP {:.2} TM {} RW {:.2} PK {:.2}",
+            self.renderer.exposure,
+            self.tone_map_label(),
+            self.renderer.reference_white_scale,
+            self.renderer.output_scale
+        );
+        if let Some([r, g, b]) = self.picked_rgb {
+            text.push_str(&format!(" RGB {:.2} {:.2} {:.2}", r, g, b));
+        }
+        self.text_overlay.set_text(&self.queue, &text);
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -282,6 +309,7 @@ impl State {
         if (new_scale - self.renderer.output_scale).abs() > EDR_SCALE_DELTA {
             self.renderer.output_scale = new_scale;
             self.renderer.update_shader_params(&self.queue);
+            self.refresh_overlay_text();
         }
         #[cfg(target_os = "windows")]
         if (probe.reference_white_scale - self.renderer.reference_white_scale).abs()
@@ -289,6 +317,7 @@ impl State {
         {
             self.renderer.reference_white_scale = probe.reference_white_scale;
             self.renderer.update_shader_params(&self.queue);
+            self.refresh_overlay_text();
         }
 
         let mut changed = self.edr_last_current.is_nan()
@@ -328,19 +357,19 @@ impl State {
     fn adjust_exposure(&mut self, factor: f32) {
         self.renderer.exposure = (self.renderer.exposure * factor).max(0.001);
         self.renderer.update_shader_params(&self.queue);
-        self.renderer.print_render_params();
+        self.refresh_overlay_text();
     }
 
     fn cycle_tone_map(&mut self) {
         self.renderer.tone_map_mode = self.renderer.tone_map_mode.next();
         self.renderer.update_shader_params(&self.queue);
-        self.renderer.print_render_params();
+        self.refresh_overlay_text();
     }
 
     fn adjust_output_scale(&mut self, factor: f32) {
         self.renderer.output_scale = (self.renderer.output_scale * factor).max(0.1);
         self.renderer.update_shader_params(&self.queue);
-        self.renderer.print_render_params();
+        self.refresh_overlay_text();
     }
 
     fn toggle_fullscreen(&self) {
@@ -375,12 +404,15 @@ impl State {
             return;
         };
         if let Some([r, g, b]) = self.picker.pick_rgb(&self.device, &self.queue, uv) {
-            let text = format!("RGB: ({r:.2}, {g:.2}, {b:.2})");
-            self.text_overlay.set_text(&self.queue, &text);
+            self.picked_rgb = Some([r, g, b]);
+            self.refresh_overlay_text();
         }
     }
 
     fn render(&mut self) {
+        if self.size.width == 0 || self.size.height == 0 {
+            return;
+        }
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) => texture,
             wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => return,
@@ -389,7 +421,8 @@ impl State {
                 return;
             }
             wgpu::CurrentSurfaceTexture::Validation => {
-                unreachable!("No error scope registered, so validation errors will panic")
+                eprintln!("wgpu surface validation error; skipping frame");
+                return;
             }
             wgpu::CurrentSurfaceTexture::Lost => {
                 self.surface = self.instance.create_surface(self.window.clone()).unwrap();

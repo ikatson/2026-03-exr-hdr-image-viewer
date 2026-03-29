@@ -5,7 +5,10 @@ use wgpu::{BufferUsages, TextureFormat, util::DeviceExt};
 pub enum ToneMapMode {
     Off = 0,
     Aces = 1,
-    GranTurismo7 = 2,
+    RenoAces = 2,
+    GranTurismo7 = 3,
+    Reinhard = 4,
+    Neutwo = 5,
 }
 
 impl ToneMapMode {
@@ -13,15 +16,21 @@ impl ToneMapMode {
         match self {
             Self::Off => "off",
             Self::Aces => "aces",
+            Self::RenoAces => "reno-aces",
             Self::GranTurismo7 => "gt7",
+            Self::Reinhard => "reinhard",
+            Self::Neutwo => "neutwo",
         }
     }
 
     pub fn next(self) -> Self {
         match self {
             Self::Off => Self::Aces,
-            Self::Aces => Self::GranTurismo7,
-            Self::GranTurismo7 => Self::Off,
+            Self::Aces => Self::RenoAces,
+            Self::RenoAces => Self::GranTurismo7,
+            Self::GranTurismo7 => Self::Reinhard,
+            Self::Reinhard => Self::Neutwo,
+            Self::Neutwo => Self::Off,
         }
     }
 }
