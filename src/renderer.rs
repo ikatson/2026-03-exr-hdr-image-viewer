@@ -6,11 +6,10 @@ use crate::display_hdr::DisplayHDR;
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ToneMapMode {
     Off = 0,
-    Aces = 1,
-    RenoAces = 2,
-    GranTurismo7 = 3,
-    Reinhard = 4,
-    Neutwo = 5,
+    Neutwo = 1,
+    GranTurismo7 = 2,
+    Reinhard = 3,
+    Aces = 4,
 }
 
 impl ToneMapMode {
@@ -18,7 +17,6 @@ impl ToneMapMode {
         match self {
             Self::Off => "off",
             Self::Aces => "aces",
-            Self::RenoAces => "reno-aces",
             Self::GranTurismo7 => "gt7",
             Self::Reinhard => "reinhard",
             Self::Neutwo => "neutwo",
@@ -27,12 +25,11 @@ impl ToneMapMode {
 
     pub fn next(self) -> Self {
         match self {
-            Self::Off => Self::Aces,
-            Self::Aces => Self::RenoAces,
-            Self::RenoAces => Self::GranTurismo7,
-            Self::GranTurismo7 => Self::Reinhard,
-            Self::Reinhard => Self::Neutwo,
-            Self::Neutwo => Self::Off,
+            ToneMapMode::Off => ToneMapMode::Neutwo,
+            ToneMapMode::Neutwo => ToneMapMode::GranTurismo7,
+            ToneMapMode::GranTurismo7 => ToneMapMode::Reinhard,
+            ToneMapMode::Reinhard => ToneMapMode::Aces,
+            ToneMapMode::Aces => ToneMapMode::Off,
         }
     }
 }

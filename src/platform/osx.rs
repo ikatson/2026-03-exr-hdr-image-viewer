@@ -28,6 +28,10 @@ pub fn macos_edr_headroom(window: &Window) -> Option<DisplayHDR> {
     let current: f64 =
         unsafe { msg_send![ns_screen, maximumExtendedDynamicRangeColorComponentValue] };
 
+    // let potential: f64 =
+    //     unsafe { msg_send![ns_screen, maximumExtendedDynamicRangeColorComponentValue] };
+    // dbg!((current, potential));
+
     Some(DisplayHDR {
         sdr_white_vs_input: 1.,
         peak_luma_vs_sdr_white: current as f32,

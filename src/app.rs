@@ -242,7 +242,6 @@ impl State {
         match self.renderer.tone_map_mode {
             crate::renderer::ToneMapMode::Off => "OFF",
             crate::renderer::ToneMapMode::Aces => "ACES",
-            crate::renderer::ToneMapMode::RenoAces => "RENOACES",
             crate::renderer::ToneMapMode::GranTurismo7 => "GT7",
             crate::renderer::ToneMapMode::Reinhard => "RH",
             crate::renderer::ToneMapMode::Neutwo => "NEU",

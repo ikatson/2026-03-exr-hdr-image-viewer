@@ -464,20 +464,20 @@ fn neutwo_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
 }
 
 fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
+    if tone_map_mode == 0u {
+        return color;
+    }
     if tone_map_mode == 1u {
-        return aces_hdr(color, peak);
+        return neutwo_tonemap(color, peak);
     }
     if tone_map_mode == 2u {
-        return reno_aces_hdr(color, peak);
-    }
-    if tone_map_mode == 3u {
         return gt7_tonemap(color, peak);
     }
-    if tone_map_mode == 4u {
+    if tone_map_mode == 3u {
         return reinhard_tonemap(color);
     }
-    if tone_map_mode == 5u {
-        return neutwo_tonemap(color, peak);
+    if tone_map_mode == 4u {
+        return aces_hdr(color, peak);
     }
     return color;
 }
