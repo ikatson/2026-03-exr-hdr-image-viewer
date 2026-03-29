@@ -1,7 +1,5 @@
-#[cfg(target_os = "windows")]
 use std::mem::size_of;
 
-#[cfg(target_os = "windows")]
 use windows::{
     Win32::{
         Devices::Display::{
@@ -23,21 +21,18 @@ use windows::{
     },
     core::Interface,
 };
-#[cfg(target_os = "windows")]
 use winit::{
     raw_window_handle::{HasWindowHandle, RawWindowHandle},
     window::Window,
 };
 
-#[cfg(target_os = "windows")]
 pub struct WindowsHdrState {
     pub current_headroom: f32,
     pub potential_headroom: f32,
     pub reference_white_scale: f32,
 }
 
-#[cfg(target_os = "windows")]
-pub fn windows_hdr_state(window: &Window) -> Option<WindowsHdrState> {
+pub fn windows_hdr_state(window: &Window) -> Option<DisplayHDR> {
     let output = dxgi_output_for_window(window)?;
     let sdr_white_nits = sdr_white_level_nits(&output.device_name).unwrap_or(80.0);
     let peak_nits = output.desc.MaxLuminance;
@@ -59,13 +54,11 @@ pub fn windows_hdr_state(window: &Window) -> Option<WindowsHdrState> {
     })
 }
 
-#[cfg(target_os = "windows")]
 struct OutputInfo {
     device_name: String,
     desc: DXGI_OUTPUT_DESC1,
 }
 
-#[cfg(target_os = "windows")]
 fn hwnd_for_window(window: &Window) -> Option<HWND> {
     let handle = window.window_handle().ok()?;
     let RawWindowHandle::Win32(win32) = handle.as_raw() else {
@@ -80,7 +73,6 @@ fn hwnd_for_window(window: &Window) -> Option<HWND> {
     Some(hwnd)
 }
 
-#[cfg(target_os = "windows")]
 fn window_rect(window: &Window) -> Option<RECT> {
     let hwnd = hwnd_for_window(window)?;
     let mut rect = RECT::default();
@@ -90,7 +82,6 @@ fn window_rect(window: &Window) -> Option<RECT> {
     Some(rect)
 }
 
-#[cfg(target_os = "windows")]
 fn dxgi_output_for_window(window: &Window) -> Option<OutputInfo> {
     let window_rect = window_rect(window)?;
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1().ok()? };
@@ -135,7 +126,6 @@ fn dxgi_output_for_window(window: &Window) -> Option<OutputInfo> {
     best_output
 }
 
-#[cfg(target_os = "windows")]
 fn sdr_white_level_nits(device_name: &str) -> Option<f32> {
     let paths = active_display_paths()?;
 
@@ -164,7 +154,6 @@ fn sdr_white_level_nits(device_name: &str) -> Option<f32> {
     None
 }
 
-#[cfg(target_os = "windows")]
 fn active_display_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
     for _ in 0..2 {
         let mut path_count = 0;
@@ -200,7 +189,6 @@ fn active_display_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
     None
 }
 
-#[cfg(target_os = "windows")]
 fn source_device_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<String> {
     let mut source_name = DISPLAYCONFIG_SOURCE_DEVICE_NAME::default();
     source_name.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
@@ -218,7 +206,6 @@ fn source_device_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<String> {
     Some(wide_to_string(&source_name.viewGdiDeviceName))
 }
 
-#[cfg(target_os = "windows")]
 fn is_hdr_colorspace(
     color_space: windows::Win32::Graphics::Dxgi::Common::DXGI_COLOR_SPACE_TYPE,
 ) -> bool {
@@ -226,7 +213,6 @@ fn is_hdr_colorspace(
         || color_space == DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020
 }
 
-#[cfg(target_os = "windows")]
 fn intersection_area(a: RECT, b: RECT) -> i64 {
     let left = a.left.max(b.left);
     let top = a.top.max(b.top);
@@ -237,7 +223,6 @@ fn intersection_area(a: RECT, b: RECT) -> i64 {
     width * height
 }
 
-#[cfg(target_os = "windows")]
 fn wide_to_string(wide: &[u16]) -> String {
     let len = wide.iter().position(|&ch| ch == 0).unwrap_or(wide.len());
     String::from_utf16_lossy(&wide[..len])

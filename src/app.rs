@@ -14,10 +14,7 @@ use winit::{
     window::{Fullscreen, Window, WindowId},
 };
 
-#[cfg(target_os = "macos")]
-use crate::macos_edr::macos_edr_headroom;
-#[cfg(target_os = "windows")]
-use crate::windows_hdr::windows_hdr_state;
+use crate::platform;
 use crate::{
     picker::GpuPicker, renderer::RenderPipelineState, stats::print_channel_stats,
     text_overlay::TextOverlay,
@@ -78,14 +75,7 @@ struct State {
     cursor_pos: Option<PhysicalPosition<f64>>,
     picked_rgb: Option<[f32; 3]>,
     left_mouse_down: bool,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    edr_probe_frame: u64,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    edr_last_current: f32,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    edr_last_potential: f32,
-    #[cfg(target_os = "windows")]
-    last_reference_white_scale: f32,
+    hdr: crate::display_hdr::DisplayHDR,
 }
 
 impl State {
@@ -180,7 +170,6 @@ impl State {
 
             (r_view, g_view, b_view)
         };
-
         let renderer = RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
         let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
         let text_overlay = TextOverlay::new(
@@ -193,7 +182,6 @@ impl State {
 
         let state = Self {
             instance,
-            window,
             device,
             queue,
             size,
@@ -205,14 +193,8 @@ impl State {
             cursor_pos: None,
             picked_rgb: None,
             left_mouse_down: false,
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            edr_probe_frame: 0,
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            edr_last_current: f32::NAN,
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            edr_last_potential: f32::NAN,
-            #[cfg(target_os = "windows")]
-            last_reference_white_scale: f32::NAN,
+            hdr: platform::get_hdr_params(&window).unwrap(),
+            window,
         };
 
         state.configure_surface();
@@ -260,7 +242,7 @@ impl State {
         match self.renderer.tone_map_mode {
             crate::renderer::ToneMapMode::Off => "OFF",
             crate::renderer::ToneMapMode::Aces => "ACES",
-            crate::renderer::ToneMapMode::RenoAces => "RENO",
+            crate::renderer::ToneMapMode::RenoAces => "RENOACES",
             crate::renderer::ToneMapMode::GranTurismo7 => "GT7",
             crate::renderer::ToneMapMode::Reinhard => "RH",
             crate::renderer::ToneMapMode::Neutwo => "NEU",
@@ -269,11 +251,11 @@ impl State {
 
     fn refresh_overlay_text(&mut self) {
         let mut text = format!(
-            "EXP {:.2} TM {} RW {:.2} PK {:.2}",
+            "EXP {:.2} TM {} SDR-MULT {:.2} PEAK {:.2}",
             self.renderer.exposure,
             self.tone_map_label(),
-            self.renderer.reference_white_scale,
-            self.renderer.output_scale
+            self.renderer.hdr.sdr_white_vs_input,
+            self.renderer.hdr.peak_luma_vs_sdr_white,
         );
         if let Some([r, g, b]) = self.picked_rgb {
             text.push_str(&format!(" RGB {:.2} {:.2} {:.2}", r, g, b));
@@ -282,76 +264,14 @@ impl State {
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    fn probe_platform_hdr_after_present(&mut self) {
-        const EDR_PRINT_DELTA: f32 = 0.01;
-        const EDR_SCALE_DELTA: f32 = 0.005;
-        self.edr_probe_frame += 1;
-
-        #[cfg(target_os = "macos")]
-        let probe = ("macOS EDR", macos_edr_headroom(&self.window));
-        #[cfg(target_os = "windows")]
-        let probe = windows_hdr_state(&self.window);
-
-        #[cfg(target_os = "macos")]
-        let Some((current, potential)) = probe.1 else {
+    fn probe_display_hdr(&mut self) {
+        let display_hdr = platform::get_hdr_params(&self.window).unwrap();
+        if display_hdr == self.hdr {
             return;
-        };
-        #[cfg(target_os = "windows")]
-        let Some(probe) = probe else {
-            return;
-        };
-        #[cfg(target_os = "windows")]
-        let current = probe.current_headroom;
-        #[cfg(target_os = "windows")]
-        let potential = probe.potential_headroom;
-
-        let new_scale = current.max(1.0);
-        if (new_scale - self.renderer.output_scale).abs() > EDR_SCALE_DELTA {
-            self.renderer.output_scale = new_scale;
-            self.renderer.update_shader_params(&self.queue);
-            self.refresh_overlay_text();
         }
-        #[cfg(target_os = "windows")]
-        if (probe.reference_white_scale - self.renderer.reference_white_scale).abs()
-            > EDR_SCALE_DELTA
-        {
-            self.renderer.reference_white_scale = probe.reference_white_scale;
-            self.renderer.update_shader_params(&self.queue);
-            self.refresh_overlay_text();
-        }
-
-        let mut changed = self.edr_last_current.is_nan()
-            || self.edr_last_potential.is_nan()
-            || (current - self.edr_last_current).abs() > EDR_PRINT_DELTA
-            || (potential - self.edr_last_potential).abs() > EDR_PRINT_DELTA;
-        #[cfg(target_os = "windows")]
-        {
-            changed = changed
-                || self.last_reference_white_scale.is_nan()
-                || (probe.reference_white_scale - self.last_reference_white_scale).abs()
-                    > EDR_PRINT_DELTA;
-        }
-        if changed {
-            #[cfg(target_os = "macos")]
-            println!(
-                "{} headroom: current={:.3} potential={:.3} -> output_scale={:.3}",
-                probe.0, current, potential, self.renderer.output_scale
-            );
-            #[cfg(target_os = "windows")]
-            println!(
-                "Windows HDR headroom: current={:.3} potential={:.3} ref_white={:.3} -> output_scale={:.3}",
-                current,
-                potential,
-                self.renderer.reference_white_scale,
-                self.renderer.output_scale
-            );
-            self.edr_last_current = current;
-            self.edr_last_potential = potential;
-            #[cfg(target_os = "windows")]
-            {
-                self.last_reference_white_scale = probe.reference_white_scale;
-            }
-        }
+        self.hdr = display_hdr;
+        self.renderer.hdr = display_hdr;
+        self.renderer.update_shader_params(&self.queue);
     }
 
     fn adjust_exposure(&mut self, factor: f32) {
@@ -367,9 +287,9 @@ impl State {
     }
 
     fn adjust_output_scale(&mut self, factor: f32) {
-        self.renderer.output_scale = (self.renderer.output_scale * factor).max(0.1);
-        self.renderer.update_shader_params(&self.queue);
-        self.refresh_overlay_text();
+        // self.renderer.output_scale = (self.renderer.output_scale * factor).max(0.1);
+        // self.renderer.update_shader_params(&self.queue);
+        // self.refresh_overlay_text();
     }
 
     fn toggle_fullscreen(&self) {
@@ -430,6 +350,7 @@ impl State {
                 return;
             }
         };
+        self.probe_display_hdr();
         let texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -458,8 +379,6 @@ impl State {
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         surface_texture.present();
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
-        self.probe_platform_hdr_after_present();
     }
 }
 

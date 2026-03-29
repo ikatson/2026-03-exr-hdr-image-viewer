@@ -12,8 +12,8 @@ var channel_sampler: sampler;
 
 struct Params {
     exposure: f32,
-    reference_white_scale: f32,
-    output_scale: f32,
+    sdr_white_vs_input: f32, // on windows, this is > 1. means we need to scale the output at the end
+    peak_luma_vs_sdr_white: f32, // peak luma relative to 1. (SDR white). For peak luma computations.
     tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: Reno ACES, 3: GT7, 4: Reinhard, 5: Neutwo
 };
 
@@ -89,14 +89,6 @@ fn aces_hdr(color: vec3<f32>, peak: f32) -> vec3<f32> {
         aces_peak_curve(c.y, peak),
         aces_peak_curve(c.z, peak),
     );
-}
-
-fn display_peak_nits(reference_white_scale: f32, headroom_scale: f32) -> f32 {
-    return 80.0 * reference_white_scale * max(headroom_scale, 1e-5);
-}
-
-fn nits_to_scrgb(color_nits: vec3<f32>) -> vec3<f32> {
-    return color_nits / 80.0;
 }
 
 const RENO_ACES_MIN_STOP_SDR: f32 = -6.5;
@@ -466,35 +458,32 @@ fn neutwo_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
     );
 }
 
+fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
+    if tone_map_mode == 1u {
+        return aces_hdr(color, peak);
+    }
+    if tone_map_mode == 2u {
+        return reno_aces_hdr(color, peak);
+    }
+    if tone_map_mode == 3u {
+        return gt7_tonemap(color, peak);
+    }
+    if tone_map_mode == 4u {
+        return reinhard_tonemap(color);
+    }
+    if tone_map_mode == 5u {
+        return neutwo_tonemap(color, peak);
+    }
+    return color;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
     let r = sample_channel(r_tex, uv);
     let g = sample_channel(g_tex, uv);
     let b = sample_channel(b_tex, uv);
-    let color = vec3<f32>(r, g, b) * params.exposure;
-    if params.tone_map_mode == 1u {
-        let mapped = aces_hdr(color, params.output_scale) * params.reference_white_scale;
-        return vec4<f32>(mapped, 1.0);
-    }
-    if params.tone_map_mode == 2u {
-        let mapped = reno_aces_hdr(
-            color,
-            display_peak_nits(params.reference_white_scale, params.output_scale),
-        );
-        return vec4<f32>(nits_to_scrgb(mapped) * params.reference_white_scale, 1.0);
-    }
-    if params.tone_map_mode == 3u {
-        let mapped = gt7_tonemap(color, params.output_scale) * params.reference_white_scale;
-        return vec4<f32>(mapped, 1.0);
-    }
-    if params.tone_map_mode == 4u {
-        let mapped = reinhard_tonemap(color) * params.reference_white_scale;
-        return vec4<f32>(mapped, 1.0);
-    }
-    if params.tone_map_mode == 5u {
-        let mapped = neutwo_tonemap(color, params.output_scale) * params.reference_white_scale;
-        return vec4<f32>(mapped, 1.0);
-    }
-    return vec4<f32>(color * params.reference_white_scale, 1.0);
+    var color = vec3<f32>(r, g, b) * params.exposure;
+    color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.sdr_white_vs_input;
+    return vec4<f32>(color, 1.0);
 }

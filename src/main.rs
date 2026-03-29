@@ -2,11 +2,10 @@ use clap::Parser;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
-#[cfg(target_os = "macos")]
+mod display_hdr;
 mod macos_edr;
-#[cfg(target_os = "windows")]
-mod windows_hdr;
 mod picker;
+mod platform;
 mod renderer;
 mod stats;
 mod text_overlay;

@@ -1,5 +1,7 @@
 use wgpu::{BufferUsages, TextureFormat, util::DeviceExt};
 
+use crate::display_hdr::DisplayHDR;
+
 #[repr(u32)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ToneMapMode {
@@ -36,11 +38,11 @@ impl ToneMapMode {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 struct ShaderParams {
     exposure: f32,
-    reference_white_scale: f32,
-    output_scale: f32,
+    sdr_white_vs_input: f32,
+    peak_luma_vs_sdr_white: f32,
     tone_map_mode: u32,
 }
 
@@ -58,10 +60,9 @@ pub struct RenderPipelineState {
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
     params_buffer: wgpu::Buffer,
+    pub hdr: DisplayHDR,
     pub exposure: f32,
-    pub reference_white_scale: f32,
     pub tone_map_mode: ToneMapMode,
-    pub output_scale: f32,
 }
 
 impl RenderPipelineState {
@@ -129,18 +130,9 @@ impl RenderPipelineState {
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
-        let exposure = 1.0f32;
-        let reference_white_scale = 1.0f32;
-        let tone_map_mode = ToneMapMode::Aces;
-        let output_scale = 1.6f32;
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shader-params-buffer"),
-            contents: shader_params_as_bytes(&ShaderParams {
-                exposure,
-                reference_white_scale,
-                output_scale,
-                tone_map_mode: tone_map_mode as u32,
-            }),
+            contents: shader_params_as_bytes(&ShaderParams::default()),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -209,31 +201,20 @@ impl RenderPipelineState {
             bind_group,
             render_pipeline,
             params_buffer,
-            exposure,
-            reference_white_scale,
-            tone_map_mode,
-            output_scale,
+            tone_map_mode: ToneMapMode::Off,
+            hdr: DisplayHDR::default(),
+            exposure: 1.,
         }
     }
 
     pub fn update_shader_params(&self, queue: &wgpu::Queue) {
         let params = ShaderParams {
             exposure: self.exposure,
-            reference_white_scale: self.reference_white_scale,
-            output_scale: self.output_scale,
             tone_map_mode: self.tone_map_mode as u32,
+            sdr_white_vs_input: self.hdr.sdr_white_vs_input,
+            peak_luma_vs_sdr_white: self.hdr.peak_luma_vs_sdr_white,
         };
         queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
-    }
-
-    pub fn print_render_params(&self) {
-        println!(
-            "exposure={:.4} tone_map={} ref_white={:.3} output_scale={:.3}",
-            self.exposure,
-            self.tone_map_mode.label(),
-            self.reference_white_scale,
-            self.output_scale
-        );
     }
 
     pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
