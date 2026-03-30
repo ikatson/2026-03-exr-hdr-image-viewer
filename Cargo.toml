@@ -7,6 +7,7 @@ edition = "2024"
 clap = { version = "4.5", features = ["derive"] }
 env_logger = "*"
 exr = "1.74.0"
+image = "*"
 
 pollster = "0.4"
 wgpu = "29.0.0"

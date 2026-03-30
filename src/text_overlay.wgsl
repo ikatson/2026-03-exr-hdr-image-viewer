@@ -76,5 +76,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let atlas_x = (glyph_idx % ATLAS_COLUMNS) * GLYPH_W + gx;
     let atlas_y = (glyph_idx / ATLAS_COLUMNS) * GLYPH_H + gy;
     let alpha = textureLoad(glyph_atlas, vec2<i32>(i32(atlas_x), i32(atlas_y)), 0).r;
-    return vec4<f32>(1.0, 1.0, 1.0, alpha);
+    return vec4<f32>(2., 2.0, 2.0, alpha);
 }

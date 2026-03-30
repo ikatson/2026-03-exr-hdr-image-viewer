@@ -460,17 +460,9 @@ fn reinhard_tonemap(x: vec3<f32>) -> vec3<f32> {
     );
 }
 
-fn neutwo_tonemap_component(x: f32, peak: f32) -> f32 {
-    let p = max(peak, 1e-5);
-    return (p * x) / sqrt(x * x + p * p);
-}
-
 fn neutwo_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
-    return vec3<f32>(
-        neutwo_tonemap_component(x.r, peak),
-        neutwo_tonemap_component(x.g, peak),
-        neutwo_tonemap_component(x.b, peak),
-    );
+    let p = peak;
+    return (p * x) / sqrt(x * x + p * p);
 }
 
 fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {

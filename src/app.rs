@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::thread;
 
 use exr::prelude::{FlatSamples, read_all_data_from_file};
+use image::EncodableLayout;
 use wgpu::util::DeviceExt;
 use wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages, wgt::TextureViewDescriptor};
 use winit::{
@@ -24,7 +25,7 @@ use dispatch2::{DispatchQoS, DispatchQueue, GlobalQueueIdentifier};
 
 fn f32_slice_as_bytes(data: &[f32]) -> &[u8] {
     // Reinterpret f32 channel values as raw bytes for GPU upload.
-    unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), data.len() * 4) }
+    unsafe { core::slice::from_raw_parts(data.as_ptr().cast::<u8>(), std::mem::size_of_val(data)) }
 }
 
 fn pick_hdr_surface_format(cap: &wgpu::SurfaceCapabilities) -> TextureFormat {
@@ -79,7 +80,7 @@ struct State {
 }
 
 impl State {
-    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, exr_path: &str) -> Self {
+    async fn new(display: OwnedDisplayHandle, window: Arc<Window>, image_path: &str) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(display),
         ));
@@ -103,33 +104,65 @@ impl State {
         );
 
         let (r_view, g_view, b_view) = {
-            let img = read_all_data_from_file(exr_path).unwrap();
-            let first_layer = &img.layer_data[0];
-            let channels = &first_layer.channel_data.list;
-            let image_width: u32 = first_layer.size.width().try_into().unwrap();
-            let image_height: u32 = first_layer.size.height().try_into().unwrap();
+            let image = image::ImageReader::open(image_path)
+                .unwrap()
+                .with_guessed_format()
+                .unwrap()
+                .decode()
+                .unwrap();
+            let image_width = image.width();
+            let image_height = image.height();
+            let rgb = image.into_rgb32f();
+            let mut channel_r = Vec::with_capacity(rgb.len());
+            let mut channel_g = Vec::with_capacity(rgb.len());
+            let mut channel_b = Vec::with_capacity(rgb.len());
 
-            let channel_values = |name: &str| -> Vec<f32> {
-                let channel = channels
-                    .iter()
-                    .find(|c| c.name.eq(name))
-                    .unwrap_or_else(|| {
-                        panic!("missing EXR channel: {name}");
-                    });
-                let data = match &channel.sample_data.levels_as_slice()[0] {
-                    FlatSamples::F32(data) => data.as_slice(),
-                    _ => panic!("unsupported sample format for channel: {name}"),
+            if rgb.color_space().transfer == image::metadata::CicpTransferCharacteristics::Linear
+                || image_path.ends_with(".exr")
+            {
+                for [r, g, b] in rgb.as_chunks::<3>().0 {
+                    channel_r.push(*r);
+                    channel_g.push(*g);
+                    channel_b.push(*b);
+                }
+            } else {
+                for [r, g, b] in rgb.as_chunks::<3>().0 {
+                    channel_r.push(r.powf(2.2));
+                    channel_g.push(g.powf(2.2));
+                    channel_b.push(b.powf(2.2));
+                }
+            }
+
+            if false {
+                // openexr
+                let img = read_all_data_from_file(image_path).unwrap();
+                let first_layer = &img.layer_data[0];
+                let channels = &first_layer.channel_data.list;
+                let image_width: u32 = first_layer.size.width().try_into().unwrap();
+                let image_height: u32 = first_layer.size.height().try_into().unwrap();
+
+                let channel_values = |name: &str| -> Vec<f32> {
+                    let channel = channels
+                        .iter()
+                        .find(|c| c.name.eq(name))
+                        .unwrap_or_else(|| {
+                            panic!("missing EXR channel: {name}");
+                        });
+                    let data = match &channel.sample_data.levels_as_slice()[0] {
+                        FlatSamples::F32(data) => data.as_slice(),
+                        _ => panic!("unsupported sample format for channel: {name}"),
+                    };
+                    data.to_vec()
                 };
-                data.to_vec()
-            };
 
-            let channel_r = channel_values("R");
-            let channel_g = channel_values("G");
-            let channel_b = channel_values("B");
-            let expected_len = (image_width * image_height) as usize;
-            assert_eq!(channel_r.len(), expected_len, "unexpected R channel size");
-            assert_eq!(channel_g.len(), expected_len, "unexpected G channel size");
-            assert_eq!(channel_b.len(), expected_len, "unexpected B channel size");
+                let channel_r = channel_values("R");
+                let channel_g = channel_values("G");
+                let channel_b = channel_values("B");
+                let expected_len = (image_width * image_height) as usize;
+                assert_eq!(channel_r.len(), expected_len, "unexpected R channel size");
+                assert_eq!(channel_g.len(), expected_len, "unexpected G channel size");
+                assert_eq!(channel_b.len(), expected_len, "unexpected B channel size");
+            }
 
             let create_channel_view = |label: &'static str, values: &[f32]| {
                 let texture = device.create_texture_with_data(
