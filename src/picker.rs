@@ -1,5 +1,6 @@
 use std::sync::mpsc;
 
+use half::f16;
 use wgpu::{BufferUsages, util::DeviceExt};
 
 #[repr(C)]
@@ -180,12 +181,23 @@ impl GpuPicker {
         }
     }
 
-    pub fn pick_rgb(&self, device: &wgpu::Device, queue: &wgpu::Queue, uv: [f32; 2]) -> Option<[f32; 3]> {
+    pub fn pick_rgb(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uv: [f32; 2],
+    ) -> Option<[f32; 3]> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("pick-and-readback"),
         });
         self.encode_pick(&mut encoder, queue, uv);
-        encoder.copy_buffer_to_buffer(&self.pick_output_buffer, 0, &self.pick_readback_buffer, 0, 16);
+        encoder.copy_buffer_to_buffer(
+            &self.pick_output_buffer,
+            0,
+            &self.pick_readback_buffer,
+            0,
+            16,
+        );
         queue.submit([encoder.finish()]);
 
         let slice = self.pick_readback_buffer.slice(..);
@@ -227,5 +239,104 @@ impl GpuPicker {
         pass.set_pipeline(&self.pick_pipeline);
         pass.set_bind_group(0, &self.pick_bind_group, &[]);
         pass.dispatch_workgroups(1, 1, 1);
+    }
+}
+
+pub struct OutputPicker {
+    format: wgpu::TextureFormat,
+    readback_buffer: wgpu::Buffer,
+}
+
+impl OutputPicker {
+    const ROW_BYTES: u64 = 256;
+
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("output-pick-readback-buffer"),
+            size: Self::ROW_BYTES,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            format,
+            readback_buffer,
+        }
+    }
+
+    pub fn pick_rgb(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture: &wgpu::Texture,
+        xy: [u32; 2],
+    ) -> Option<[f32; 3]> {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("output-pick-copy"),
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: xy[0],
+                    y: xy[1],
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &self.readback_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(Self::ROW_BYTES as u32),
+                    rows_per_image: Some(1),
+                },
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit([encoder.finish()]);
+
+        let slice = self.readback_buffer.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let Ok(Ok(())) = rx.recv() else {
+            return None;
+        };
+
+        let bytes = slice.get_mapped_range();
+        let rgb = match self.format {
+            wgpu::TextureFormat::Rgba16Float => {
+                let read_f16 = |offset: usize| -> f32 {
+                    let mut raw = [0u8; 2];
+                    raw.copy_from_slice(&bytes[offset..offset + 2]);
+                    f16::from_bits(u16::from_ne_bytes(raw)).to_f32()
+                };
+                [read_f16(0), read_f16(2), read_f16(4)]
+            }
+            wgpu::TextureFormat::Rgba32Float => {
+                let read_f32 = |offset: usize| -> f32 {
+                    let mut raw = [0u8; 4];
+                    raw.copy_from_slice(&bytes[offset..offset + 4]);
+                    f32::from_ne_bytes(raw)
+                };
+                [read_f32(0), read_f32(4), read_f32(8)]
+            }
+            _ => {
+                drop(bytes);
+                self.readback_buffer.unmap();
+                return None;
+            }
+        };
+        drop(bytes);
+        self.readback_buffer.unmap();
+        Some(rgb)
     }
 }

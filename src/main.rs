@@ -2,6 +2,7 @@ use clap::Parser;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
+mod blit;
 mod display_hdr;
 mod macos_edr;
 mod picker;

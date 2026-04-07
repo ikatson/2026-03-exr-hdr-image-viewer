@@ -8,6 +8,7 @@ anyhow = "1.0.102"
 clap = { version = "4.5", features = ["derive"] }
 env_logger = "*"
 exr = "1.74.0"
+half = "2.7.1"
 image = "*"
 
 pollster = "0.4"

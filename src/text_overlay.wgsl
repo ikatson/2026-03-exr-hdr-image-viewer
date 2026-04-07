@@ -2,7 +2,7 @@ const GLYPH_W: u32 = 5u;
 const GLYPH_H: u32 = 7u;
 const GLYPH_SCALE: u32 = 2u;
 const GLYPH_ADVANCE: u32 = (GLYPH_W + 2u) * GLYPH_SCALE;
-const MAX_TEXT_CHARS: u32 = 72u;
+const MAX_TEXT_CHARS: u32 = 96u;
 const ATLAS_COLUMNS: u32 = 16u;
 
 struct OverlayParams {

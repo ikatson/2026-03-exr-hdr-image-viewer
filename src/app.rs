@@ -1,11 +1,9 @@
-use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 #[cfg(not(target_os = "macos"))]
 use std::thread;
 
 use exr::prelude::{FlatSamples, read_all_data_from_file};
-use image::EncodableLayout;
 use wgpu::util::DeviceExt;
 use wgpu::{Device, Queue, TextureView};
 use wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages, wgt::TextureViewDescriptor};
@@ -20,7 +18,10 @@ use winit::{
 
 use crate::platform;
 use crate::{
-    picker::GpuPicker, renderer::RenderPipelineState, stats::print_channel_stats,
+    blit::BlitPipeline,
+    picker::{GpuPicker, OutputPicker},
+    renderer::RenderPipelineState,
+    stats::print_channel_stats,
     text_overlay::TextOverlay,
 };
 #[cfg(target_os = "macos")]
@@ -75,9 +76,14 @@ struct State {
     surface_format: wgpu::TextureFormat,
     renderer: RenderPipelineState,
     picker: GpuPicker,
+    output_picker: OutputPicker,
+    blitter: BlitPipeline,
+    display_texture: wgpu::Texture,
+    display_texture_view: wgpu::TextureView,
     text_overlay: TextOverlay,
     cursor_pos: Option<PhysicalPosition<f64>>,
-    picked_rgb: Option<[f32; 3]>,
+    picked_source_rgb: Option<[f32; 3]>,
+    picked_output_rgb: Option<[f32; 3]>,
     left_mouse_down: bool,
     hdr: crate::display_hdr::DisplayHDR,
 }
@@ -114,6 +120,14 @@ impl State {
         renderer.update_shader_params(&queue);
         renderer.hdr = hdr;
         let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
+        let (display_texture, display_texture_view) = create_display_texture(
+            &device,
+            size.width.max(1),
+            size.height.max(1),
+            surface_format,
+        );
+        let output_picker = OutputPicker::new(&device, surface_format);
+        let blitter = BlitPipeline::new(&device, surface_format, &display_texture_view);
         let text_overlay = TextOverlay::new(
             &device,
             &queue,
@@ -131,9 +145,14 @@ impl State {
             surface_format,
             renderer,
             picker,
+            output_picker,
+            blitter,
+            display_texture,
+            display_texture_view,
             text_overlay,
             cursor_pos: None,
-            picked_rgb: None,
+            picked_source_rgb: None,
+            picked_output_rgb: None,
             left_mouse_down: false,
             hdr,
             window,
@@ -171,12 +190,41 @@ impl State {
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
         self.configure_surface();
+        let (display_texture, display_texture_view) = create_display_texture(
+            &self.device,
+            self.size.width.max(1),
+            self.size.height.max(1),
+            self.surface_format,
+        );
+        self.display_texture = display_texture;
+        self.display_texture_view = display_texture_view;
+        self.blitter
+            .update_source(&self.device, &self.display_texture_view);
         self.text_overlay
             .resize(&self.queue, self.size.width.max(1), self.size.height.max(1));
     }
 
     fn update_cursor_pos(&mut self, position: PhysicalPosition<f64>) {
         self.cursor_pos = Some(position);
+    }
+
+    fn pick_coords(&self) -> Option<([f32; 2], [u32; 2])> {
+        let cursor_pos = self.cursor_pos?;
+        if self.size.width == 0 || self.size.height == 0 {
+            return None;
+        }
+
+        let max_x = self.size.width.saturating_sub(1) as f64;
+        let max_y = self.size.height.saturating_sub(1) as f64;
+        let clamped_x = cursor_pos.x.clamp(0.0, max_x);
+        let clamped_y = cursor_pos.y.clamp(0.0, max_y);
+
+        let uv = [
+            (clamped_x / self.size.width as f64) as f32,
+            (clamped_y / self.size.height as f64) as f32,
+        ];
+        let xy = [clamped_x.floor() as u32, clamped_y.floor() as u32];
+        Some((uv, xy))
     }
 
     fn tone_map_label(&self) -> &'static str {
@@ -199,8 +247,11 @@ impl State {
             self.renderer.hdr.sdr_white_vs_input,
             self.renderer.hdr.peak_luma_vs_sdr_white,
         );
-        if let Some([r, g, b]) = self.picked_rgb {
-            text.push_str(&format!(" RGB {:.2} {:.2} {:.2}", r, g, b));
+        if let Some([r, g, b]) = self.picked_source_rgb {
+            text.push_str(&format!(" IN {:.2} {:.2} {:.2}", r, g, b));
+        }
+        if let Some([r, g, b]) = self.picked_output_rgb {
+            text.push_str(&format!(" OUT {:.2} {:.2} {:.2}", r, g, b));
         }
         self.text_overlay.set_text(&self.queue, &text);
     }
@@ -239,30 +290,20 @@ impl State {
         }
     }
 
-    fn pick_uv(&self) -> Option<[f32; 2]> {
-        let cursor_pos = self.cursor_pos?;
-        if self.size.width == 0 || self.size.height == 0 {
-            return None;
-        }
-
-        let max_x = self.size.width.saturating_sub(1) as f64;
-        let max_y = self.size.height.saturating_sub(1) as f64;
-        let clamped_x = cursor_pos.x.clamp(0.0, max_x);
-        let clamped_y = cursor_pos.y.clamp(0.0, max_y);
-
-        let u = clamped_x / self.size.width as f64;
-        let v = clamped_y / self.size.height as f64;
-        Some([u as f32, v as f32])
-    }
-
     fn update_picked_color_overlay(&mut self) {
-        let Some(uv) = self.pick_uv() else {
+        let Some((uv, xy)) = self.pick_coords() else {
             return;
         };
         if let Some([r, g, b]) = self.picker.pick_rgb(&self.device, &self.queue, uv) {
-            self.picked_rgb = Some([r, g, b]);
-            self.refresh_overlay_text();
+            self.picked_source_rgb = Some([r, g, b]);
         }
+        if let Some([r, g, b]) =
+            self.output_picker
+                .pick_rgb(&self.device, &self.queue, &self.display_texture, xy)
+        {
+            self.picked_output_rgb = Some([r, g, b]);
+        }
+        self.refresh_overlay_text();
     }
 
     fn render(&mut self) {
@@ -293,7 +334,27 @@ impl State {
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
+            label: Some("scene-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.display_texture_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        self.renderer.render(&mut renderpass);
+        drop(renderpass);
+
+        let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("present-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &texture_view,
                 depth_slice: None,
@@ -309,7 +370,7 @@ impl State {
             multiview_mask: None,
         });
 
-        self.renderer.render(&mut renderpass);
+        self.blitter.render(&mut renderpass);
         self.text_overlay.render(&mut renderpass);
         drop(renderpass);
 
@@ -317,6 +378,32 @@ impl State {
         self.window.pre_present_notify();
         surface_texture.present();
     }
+}
+
+fn create_display_texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    format: TextureFormat,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("display-texture"),
+        size: Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: TextureUsages::RENDER_ATTACHMENT
+            | TextureUsages::TEXTURE_BINDING
+            | TextureUsages::COPY_SRC,
+        view_formats: &[format],
+    });
+    let view = texture.create_view(&TextureViewDescriptor::default());
+    (texture, view)
 }
 
 pub struct App {
