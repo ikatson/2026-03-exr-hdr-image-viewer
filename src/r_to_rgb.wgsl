@@ -550,19 +550,33 @@ fn convert_yuv_to_rgb(c: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(r, g, b);
 }
 
+// BT 2100 document
+const PQ_m1: f32 = 0.1593017578125;
+const PQ_m2: f32 = 78.84375;
+const PQ_c1: f32 = 0.8359375;
+const PQ_c2: f32 = 18.8515625;
+const PQ_c3: f32 = 18.6875;
+
+// PQ -> nits
 fn pq_eotf_component(c: f32) -> f32 {
-    let e_tmp = pow(c, 1. / 78.84375);
-    // bt2100 doc
+    let e_tmp = pow(c, 1. / PQ_m2);
     return pow(
-        max(e_tmp - 0.8359375, 0.) / (18.8515625 - 18.6875 * e_tmp),
-        1. / 0.1593017578125
-    );
+        max(e_tmp - PQ_c1, 0.) / (PQ_c2 - PQ_c3 * e_tmp),
+        1. / PQ_m1
+    ) * 10000.;
+}
+
+// nits -> PQ
+fn pq_eotf_inv_component(nits: f32) -> f32 {
+    let y = nits / 10000.;
+    let y_m = pow(y, PQ_m1);
+    return pow((PQ_c1 + PQ_c2 * y_m) / (1. + PQ_c3 * y_m), PQ_m2);
 }
 
 fn pq_eotf(c: vec3<f32>) -> vec3<f32> {
     // [0-1] non-lilnear (PQ) rgb -> [0-10000] absolute nits
     // You can divide by e.g. 203 (HDR reference white per bt2100) to normalize to 1.0 as SDR max
-    return 10000. * vec3(
+    return vec3(
         pq_eotf_component(c.r),
         pq_eotf_component(c.g),
         pq_eotf_component(c.b),
@@ -580,6 +594,57 @@ fn bt2020_to_709(c: vec3<f32>) -> vec3<f32> {
     ) * c;
 }
 
+// this tonemaps PQ into max display range
+// input MUST be PQ itself (0-1), nonlinear
+fn apply_bt2390_eetf(e_prime: vec3<f32>, display_min_nits: f32, display_max_nits: f32) -> vec3<f32> {
+    // --- Step 0: Setup Parameters ---
+    // Assuming content was mastered for the full PQ range if LB/LW are unknown.
+    // lw might be maxfall .e.g 4000 or 1000
+    let lb = 0.0;
+    let lw = 4000.0;
+
+    // Target display (Your monitor)
+    let l_min = display_min_nits;   // Typical LCD black floor in nits
+    let l_max = display_max_nits; // Your empirical 300 nits peak
+
+    // Helper: Normalized PQ inverse (eotf^-1)
+    let e_1 = (e_prime - pq_eotf_inv_component(lb)) / (pq_eotf_inv_component(lw) - pq_eotf_inv_component(lb));
+
+    // --- Step 1: Calculate minLum and maxLum ---
+    // These represent the target display's range relative to the mastering display
+    // Using the 0-1 PQ space directly
+    let min_lum = pq_eotf_inv_component(l_min); // eotf^-1(l_min) / 10000 normalized
+    let max_lum = pq_eotf_inv_component(l_max);
+
+    // --- Step 2: Calculate Knee Start (KS) and Lift (b) ---
+    let ks = 1.5 * max_lum - 0.5;
+    let b = min_lum;
+
+    // --- Step 3 & 4: Solve for E3 (The Spline) ---
+    return vec3<f32>(
+        eetf_component(e_1.r, ks, max_lum, b),
+        eetf_component(e_1.g, ks, max_lum, b),
+        eetf_component(e_1.b, ks, max_lum, b)
+    );
+}
+
+fn eetf_component(e1: f32, ks: f32, max_lum: f32, b: f32) -> f32 {
+    var e2: f32;
+    if (e1 < ks) {
+        e2 = e1;
+    } else {
+        // Hermite Spline P[B]
+        let t = (e1 - ks) / (1.0 - ks);
+        e2 = (2.0*t*t*t - 3.0*t*t + 1.0) * ks +
+             (t*t*t - 2.0*t*t + t) * (1.0 - ks) +
+             (-2.0*t*t*t + 3.0*t*t) * max_lum;
+    }
+
+    // Final Black Level Lift (Step 3 final equation)
+    // e3 = e2 + b(1 - e2)^4
+    return e2 + b * pow(1.0 - e2, 4.0);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
@@ -590,11 +655,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if params.is_yuv == 1 {
         // [0-65535] -> [0-1] rgb
         color = convert_yuv_to_rgb(color);
+
+        color = apply_bt2390_eetf(color, 0.1, 500);
+
         // [0-1] rgb -> [0-1] linear, where 1 is 10000 nits
         color = pq_eotf(color);
         // normalize to SDR max white (so that 1. == SDR max). At least on OSX this is fine.
         // on windows TBD
         color = color / 300.;
+
         // output is linear rec 709 on Windows and seemingy on OSX too
         color = bt2020_to_709(color);
     }
