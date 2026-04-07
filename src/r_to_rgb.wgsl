@@ -592,9 +592,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         color = convert_yuv_to_rgb(color);
         // [0-1] rgb -> [0-1] linear, where 1 is 10000 nits
         color = pq_eotf(color);
-        // normalize to "reference white", 203 nits (from bt2100 hdr reference white)
-        // kind of poor mans filmmaker mode value
-        color = color / 203.;
+        // normalize to SDR max white (so that 1. == SDR max). At least on OSX this is fine.
+        // on windows TBD
+        color = color / 300.;
         // output is linear rec 709 on Windows and seemingy on OSX too
         color = bt2020_to_709(color);
     }
