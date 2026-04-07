@@ -51,9 +51,9 @@ fn spawn_channel_stats_thread(channel_r: Vec<f32>, channel_g: Vec<f32>, channel_
             DispatchQoS::Background,
         ));
         queue.exec_async(move || {
-            print_channel_stats("R", &channel_r);
-            print_channel_stats("G", &channel_g);
-            print_channel_stats("B", &channel_b);
+            print_channel_stats("R/Y", &channel_r);
+            print_channel_stats("G/Cb", &channel_g);
+            print_channel_stats("B/Cr", &channel_b);
         });
     }
 
@@ -401,17 +401,132 @@ impl ApplicationHandler for App {
 }
 
 fn open_yuv(
+    device: &Device,
+    queue: &Queue,
+    path: &Path,
     w: u16,
     h: u16,
-    path: &Path,
 ) -> anyhow::Result<(TextureView, TextureView, TextureView)> {
+    let w = w as u32;
+    let h = h as u32;
     let data = std::fs::read(path)?;
 
     let y_len = w * h * 2;
     let u_len = w / 2 * h / 2 * 2;
     let v_len = u_len;
     assert_eq!(data.len(), (y_len + u_len + v_len) as usize);
-    todo!()
+
+    // TODO: this is horrible, but I need to see the picture, so hacking to work with existing f32 code
+    fn u16_as_f32(b: &[u8]) -> Vec<f32> {
+        let mut output = Vec::new();
+        for chunk in b.as_chunks::<2>().0 {
+            output.push(u16::from_le_bytes(*chunk) as f32);
+        }
+        output
+    }
+
+    let mut data = &data[..];
+    let y = u16_as_f32(data.split_off(..y_len as usize).unwrap());
+    let u = u16_as_f32(data.split_off(..u_len as usize).unwrap());
+    let v = u16_as_f32(data.split_off(..v_len as usize).unwrap());
+
+    let y_tx = device.create_texture_with_data(
+        queue,
+        &TextureDescriptor {
+            label: Some("y"),
+            size: Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::R32Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[TextureFormat::R32Float],
+        },
+        Default::default(),
+        f32_slice_as_bytes(&y),
+    );
+
+    let u_tx = device.create_texture_with_data(
+        queue,
+        &TextureDescriptor {
+            label: Some("y"),
+            size: Extent3d {
+                width: w / 2,
+                height: h / 2,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::R32Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[TextureFormat::R32Float],
+        },
+        Default::default(),
+        f32_slice_as_bytes(&u),
+    );
+
+    let v_tx = device.create_texture_with_data(
+        queue,
+        &TextureDescriptor {
+            label: Some("y"),
+            size: Extent3d {
+                width: w / 2,
+                height: h / 2,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::R32Float,
+            usage: TextureUsages::TEXTURE_BINDING,
+            view_formats: &[TextureFormat::R32Float],
+        },
+        Default::default(),
+        f32_slice_as_bytes(&v),
+    );
+
+    spawn_channel_stats_thread(y, u, v);
+
+    Ok((
+        y_tx.create_view(&TextureViewDescriptor {
+            label: Some("y view"),
+            format: Some(TextureFormat::R32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        }),
+        u_tx.create_view(&TextureViewDescriptor {
+            label: Some("y view"),
+            format: Some(TextureFormat::R32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        }),
+        v_tx.create_view(&TextureViewDescriptor {
+            label: Some("y view"),
+            format: Some(TextureFormat::R32Float),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        }),
+    ))
 }
 
 fn open_image(
@@ -420,7 +535,7 @@ fn open_image(
     path: &Path,
 ) -> anyhow::Result<(TextureView, TextureView, TextureView)> {
     if path.extension().is_some_and(|ext| ext == "yuv") {
-        return open_yuv(3840, 2160, path);
+        return open_yuv(device, queue, path, 3840, 2160);
     }
 
     let (r_view, g_view, b_view) = {

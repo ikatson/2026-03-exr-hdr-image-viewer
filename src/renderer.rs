@@ -35,6 +35,7 @@ struct ShaderParams {
     sdr_white_vs_input: f32,
     peak_luma_vs_sdr_white: f32,
     tone_map_mode: u32,
+    is_yuv: u32,
 }
 
 fn shader_params_as_bytes(params: &ShaderParams) -> &[u8] {
@@ -204,6 +205,7 @@ impl RenderPipelineState {
             tone_map_mode: self.tone_map_mode as u32,
             sdr_white_vs_input: self.hdr.sdr_white_vs_input,
             peak_luma_vs_sdr_white: self.hdr.peak_luma_vs_sdr_white,
+            is_yuv: 1, // todo
         };
         queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
     }

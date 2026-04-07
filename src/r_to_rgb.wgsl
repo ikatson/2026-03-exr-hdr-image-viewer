@@ -15,6 +15,7 @@ struct Params {
     sdr_white_vs_input: f32, // on windows, this is > 1. means we need to scale the output at the end so that 1.0 = 80 nits
     peak_luma_vs_sdr_white: f32, // peak luma relative to 1. (SDR white). For peak luma computations.
     tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: Reno ACES, 3: GT7, 4: Reinhard, 5: Neutwo
+    is_yuv: u32,
 };
 
 @group(0) @binding(4)
@@ -532,13 +533,34 @@ fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
     return color;
 }
 
+fn convert_yuv_to_rgb(c: vec3<f32>) -> vec3<f32> {
+    // Undo limited range:
+    // Luma   [64..940] → [0, 1]
+    // Chroma [64..960] → [-0.5, 0.5], neutral at 512
+    let y  = (c.x - 64.0  / 1023.0) / (876.0 / 1023.0);
+    let cb = (c.y - 512.0 / 1023.0) / (896.0 / 1023.0);
+    let cr = (c.z - 512.0 / 1023.0) / (896.0 / 1023.0);
+
+    // BT.2020 NCL matrix (Kr=0.2627, Kb=0.0593)
+    let r = y                 + 1.4746  * cr;
+    let g = y - 0.16455 * cb - 0.57135 * cr;
+    let b = y + 1.8814  * cb;
+    return vec3<f32>(r, g, b) / 10000.;
+
+    // return vec3<f32>(y, y, y) / 350.;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
     let r = sample_channel(r_tex, uv);
     let g = sample_channel(g_tex, uv);
     let b = sample_channel(b_tex, uv);
-    var color = vec3<f32>(r, g, b) * params.exposure;
+    var color = vec3<f32>(r, g, b);
+    if params.is_yuv == 1 {
+        color = convert_yuv_to_rgb(color);
+    }
+    color *= params.exposure;
     color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.sdr_white_vs_input;
     return vec4<f32>(color, 1.0);
 }
