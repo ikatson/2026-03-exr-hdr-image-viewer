@@ -569,6 +569,17 @@ fn pq_eotf(c: vec3<f32>) -> vec3<f32> {
     );
 }
 
+fn bt2020_to_709(c: vec3<f32>) -> vec3<f32> {
+    // https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2407-2017-PDF-E.pdf
+    //
+    // column major
+    return mat3x3<f32>(
+        vec3(1.6605, -0.1246, -0.0182),
+        vec3(-0.5876, 1.1329, -0.1006),
+        vec3(-0.0728, -0.0083, 1.1187)
+    ) * c;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
@@ -584,6 +595,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // normalize to "reference white", 203 nits (from bt2100 hdr reference white)
         // kind of poor mans filmmaker mode value
         color = color / 203.;
+        // output is linear rec 709 on Windows and seemingy on OSX too
+        color = bt2020_to_709(color);
     }
     color *= params.exposure;
     color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.sdr_white_vs_input;
