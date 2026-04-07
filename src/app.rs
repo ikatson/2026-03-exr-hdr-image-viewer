@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::path::Path;
 use std::sync::Arc;
 #[cfg(not(target_os = "macos"))]
 use std::thread;
@@ -5,6 +7,7 @@ use std::thread;
 use exr::prelude::{FlatSamples, read_all_data_from_file};
 use image::EncodableLayout;
 use wgpu::util::DeviceExt;
+use wgpu::{Device, Queue, TextureView};
 use wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages, wgt::TextureViewDescriptor};
 use winit::{
     application::ApplicationHandler,
@@ -103,106 +106,8 @@ impl State {
             surface_format, cap.present_modes, cap.alpha_modes
         );
 
-        let (r_view, g_view, b_view) = {
-            let image = image::ImageReader::open(image_path)
-                .unwrap()
-                .with_guessed_format()
-                .unwrap()
-                .decode()
-                .unwrap();
-            let image_width = image.width();
-            let image_height = image.height();
-            let rgb = image.into_rgb32f();
-            let mut channel_r = Vec::with_capacity(rgb.len());
-            let mut channel_g = Vec::with_capacity(rgb.len());
-            let mut channel_b = Vec::with_capacity(rgb.len());
+        let (r_view, g_view, b_view) = open_image(&device, &queue, Path::new(image_path)).unwrap();
 
-            if rgb.color_space().transfer == image::metadata::CicpTransferCharacteristics::Linear
-                || image_path.ends_with(".exr")
-            {
-                for [r, g, b] in rgb.as_chunks::<3>().0 {
-                    channel_r.push(*r);
-                    channel_g.push(*g);
-                    channel_b.push(*b);
-                }
-            } else {
-                for [r, g, b] in rgb.as_chunks::<3>().0 {
-                    channel_r.push(r.powf(2.2));
-                    channel_g.push(g.powf(2.2));
-                    channel_b.push(b.powf(2.2));
-                }
-            }
-
-            if false {
-                // openexr
-                let img = read_all_data_from_file(image_path).unwrap();
-                let first_layer = &img.layer_data[0];
-                let channels = &first_layer.channel_data.list;
-                let image_width: u32 = first_layer.size.width().try_into().unwrap();
-                let image_height: u32 = first_layer.size.height().try_into().unwrap();
-
-                let channel_values = |name: &str| -> Vec<f32> {
-                    let channel = channels
-                        .iter()
-                        .find(|c| c.name.eq(name))
-                        .unwrap_or_else(|| {
-                            panic!("missing EXR channel: {name}");
-                        });
-                    let data = match &channel.sample_data.levels_as_slice()[0] {
-                        FlatSamples::F32(data) => data.as_slice(),
-                        _ => panic!("unsupported sample format for channel: {name}"),
-                    };
-                    data.to_vec()
-                };
-
-                let channel_r = channel_values("R");
-                let channel_g = channel_values("G");
-                let channel_b = channel_values("B");
-                let expected_len = (image_width * image_height) as usize;
-                assert_eq!(channel_r.len(), expected_len, "unexpected R channel size");
-                assert_eq!(channel_g.len(), expected_len, "unexpected G channel size");
-                assert_eq!(channel_b.len(), expected_len, "unexpected B channel size");
-            }
-
-            let create_channel_view = |label: &'static str, values: &[f32]| {
-                let texture = device.create_texture_with_data(
-                    &queue,
-                    &TextureDescriptor {
-                        label: Some(label),
-                        size: Extent3d {
-                            width: image_width,
-                            height: image_height,
-                            depth_or_array_layers: 1,
-                        },
-                        mip_level_count: 1,
-                        sample_count: 1,
-                        dimension: wgpu::TextureDimension::D2,
-                        format: TextureFormat::R32Float,
-                        usage: TextureUsages::TEXTURE_BINDING,
-                        view_formats: &[TextureFormat::R32Float],
-                    },
-                    wgpu::wgt::TextureDataOrder::default(),
-                    f32_slice_as_bytes(values),
-                );
-                texture.create_view(&TextureViewDescriptor {
-                    label: Some(label),
-                    format: Some(TextureFormat::R32Float),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    usage: Some(TextureUsages::TEXTURE_BINDING),
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    mip_level_count: None,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                })
-            };
-            let r_view = create_channel_view("r-channel-view", &channel_r);
-            let g_view = create_channel_view("g-channel-view", &channel_g);
-            let b_view = create_channel_view("b-channel-view", &channel_b);
-            spawn_channel_stats_thread(channel_r, channel_g, channel_b);
-
-            (r_view, g_view, b_view)
-        };
         let mut renderer =
             RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
         let hdr = platform::get_hdr_params(&window).unwrap();
@@ -493,4 +398,130 @@ impl ApplicationHandler for App {
             _ => (),
         }
     }
+}
+
+fn open_yuv(
+    w: u16,
+    h: u16,
+    path: &Path,
+) -> anyhow::Result<(TextureView, TextureView, TextureView)> {
+    let data = std::fs::read(path)?;
+
+    let y_len = w * h * 2;
+    let u_len = w / 2 * h / 2 * 2;
+    let v_len = u_len;
+    assert_eq!(data.len(), (y_len + u_len + v_len) as usize);
+    todo!()
+}
+
+fn open_image(
+    device: &Device,
+    queue: &Queue,
+    path: &Path,
+) -> anyhow::Result<(TextureView, TextureView, TextureView)> {
+    if path.extension().is_some_and(|ext| ext == "yuv") {
+        return open_yuv(3840, 2160, path);
+    }
+
+    let (r_view, g_view, b_view) = {
+        let image = image::ImageReader::open(path)
+            .unwrap()
+            .with_guessed_format()
+            .unwrap()
+            .decode()
+            .unwrap();
+        let image_width = image.width();
+        let image_height = image.height();
+        let rgb = image.into_rgb32f();
+        let mut channel_r = Vec::with_capacity(rgb.len());
+        let mut channel_g = Vec::with_capacity(rgb.len());
+        let mut channel_b = Vec::with_capacity(rgb.len());
+
+        if rgb.color_space().transfer == image::metadata::CicpTransferCharacteristics::Linear
+            || path.extension().is_some_and(|ext| ext == "exr")
+        {
+            for [r, g, b] in rgb.as_chunks::<3>().0 {
+                channel_r.push(*r);
+                channel_g.push(*g);
+                channel_b.push(*b);
+            }
+        } else {
+            for [r, g, b] in rgb.as_chunks::<3>().0 {
+                channel_r.push(r.powf(2.2));
+                channel_g.push(g.powf(2.2));
+                channel_b.push(b.powf(2.2));
+            }
+        }
+
+        if false {
+            // openexr
+            let img = read_all_data_from_file(path).unwrap();
+            let first_layer = &img.layer_data[0];
+            let channels = &first_layer.channel_data.list;
+            let image_width: u32 = first_layer.size.width().try_into().unwrap();
+            let image_height: u32 = first_layer.size.height().try_into().unwrap();
+
+            let channel_values = |name: &str| -> Vec<f32> {
+                let channel = channels
+                    .iter()
+                    .find(|c| c.name.eq(name))
+                    .unwrap_or_else(|| {
+                        panic!("missing EXR channel: {name}");
+                    });
+                let data = match &channel.sample_data.levels_as_slice()[0] {
+                    FlatSamples::F32(data) => data.as_slice(),
+                    _ => panic!("unsupported sample format for channel: {name}"),
+                };
+                data.to_vec()
+            };
+
+            let channel_r = channel_values("R");
+            let channel_g = channel_values("G");
+            let channel_b = channel_values("B");
+            let expected_len = (image_width * image_height) as usize;
+            assert_eq!(channel_r.len(), expected_len, "unexpected R channel size");
+            assert_eq!(channel_g.len(), expected_len, "unexpected G channel size");
+            assert_eq!(channel_b.len(), expected_len, "unexpected B channel size");
+        }
+
+        let create_channel_view = |label: &'static str, values: &[f32]| {
+            let texture = device.create_texture_with_data(
+                queue,
+                &TextureDescriptor {
+                    label: Some(label),
+                    size: Extent3d {
+                        width: image_width,
+                        height: image_height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: TextureFormat::R32Float,
+                    usage: TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[TextureFormat::R32Float],
+                },
+                wgpu::wgt::TextureDataOrder::default(),
+                f32_slice_as_bytes(values),
+            );
+            texture.create_view(&TextureViewDescriptor {
+                label: Some(label),
+                format: Some(TextureFormat::R32Float),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(TextureUsages::TEXTURE_BINDING),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: None,
+                base_array_layer: 0,
+                array_layer_count: None,
+            })
+        };
+        let r_view = create_channel_view("r-channel-view", &channel_r);
+        let g_view = create_channel_view("g-channel-view", &channel_g);
+        let b_view = create_channel_view("b-channel-view", &channel_b);
+        spawn_channel_stats_thread(channel_r, channel_g, channel_b);
+
+        (r_view, g_view, b_view)
+    };
+    Ok((r_view, g_view, b_view))
 }

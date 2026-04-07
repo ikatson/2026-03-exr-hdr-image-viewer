@@ -716,6 +716,7 @@ dependencies = [
 name = "exhdr"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "dispatch2",
  "env_logger",
