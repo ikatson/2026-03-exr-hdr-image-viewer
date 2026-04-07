@@ -11,6 +11,7 @@ pub enum ToneMapMode {
     Reinhard = 3,
     Aces = 4,
     RenoAces = 5,
+    AgX = 6,
 }
 
 impl ToneMapMode {
@@ -21,7 +22,8 @@ impl ToneMapMode {
             ToneMapMode::GranTurismo7 => ToneMapMode::Reinhard,
             ToneMapMode::Reinhard => ToneMapMode::Aces,
             ToneMapMode::Aces => ToneMapMode::RenoAces,
-            ToneMapMode::RenoAces => ToneMapMode::Off,
+            ToneMapMode::RenoAces => ToneMapMode::AgX,
+            ToneMapMode::AgX => ToneMapMode::Off,
         }
     }
 }

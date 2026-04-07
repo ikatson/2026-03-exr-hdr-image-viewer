@@ -282,6 +282,7 @@ impl State {
             crate::renderer::ToneMapMode::Reinhard => "RH",
             crate::renderer::ToneMapMode::Neutwo => "NEU",
             crate::renderer::ToneMapMode::RenoAces => "RENO-ACES",
+            crate::renderer::ToneMapMode::AgX => "AGX",
         }
     }
 

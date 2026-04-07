@@ -465,6 +465,48 @@ fn neutwo_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
     return (p * x) / sqrt(x * x + p * p);
 }
 
+fn agx_default_contrast_approx(x: vec3<f32>) -> vec3<f32> {
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    let x6 = x4 * x2;
+    return  - 17.86     * x6 * x
+            + 78.01     * x6
+            - 126.7     * x4 * x
+            + 92.06     * x4
+            - 28.72     * x2 * x
+            + 4.361     * x2
+            - 0.1718    * x
+            + 0.002857;
+}
+
+fn agx_tonemap(color: vec3<f32>, peak: f32) -> vec3<f32> {
+    let agx_mat = mat3x3<f32>(
+        vec3<f32>( 0.842479062253094,  0.0423282422610123, 0.0423756549057051),
+        vec3<f32>( 0.0784335999999992, 0.878468636469772,  0.0784336          ),
+        vec3<f32>( 0.0792237451477643, 0.0791661274605434, 0.879142973793104  ),
+    );
+
+    let agx_mat_inv = mat3x3<f32>(
+        vec3<f32>( 1.19687900512017,   -0.0528968517574562, -0.0529716355144438),
+        vec3<f32>(-0.0980208811401368,  1.15190312990417,   -0.0980434501171241),
+        vec3<f32>(-0.0990297440797205, -0.0989611768448433,  1.15107367264116  ),
+    );
+
+    let min_ev = -12.47393;
+    let max_ev =   4.026069;
+
+    var c = color;
+
+    c = agx_mat * c;
+    c = clamp(log2(max(c, vec3<f32>(1e-10))), vec3<f32>(min_ev), vec3<f32>(max_ev));
+    c = (c - min_ev) / (max_ev - min_ev);
+    c = agx_default_contrast_approx(c);
+    c = agx_mat_inv * c;
+
+    // Scale to display range: 1.0 = SDR white, peak = display max luminance
+    return max(c, vec3<f32>(0.0)) * peak;
+}
+
 fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
     if tone_map_mode == 0u {
         return color;
@@ -483,6 +525,9 @@ fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
     }
     if tone_map_mode == 5u {
         return reno_aces_hdr(color, peak);
+    }
+    if tone_map_mode == 6u {
+        return agx_tonemap(color, peak);
     }
     return color;
 }
