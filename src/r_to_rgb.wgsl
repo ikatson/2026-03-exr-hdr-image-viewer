@@ -534,20 +534,20 @@ fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
 }
 
 fn convert_yuv_to_rgb(c: vec3<f32>) -> vec3<f32> {
-    // Undo limited range:
-    // Luma   [64..940] → [0, 1]
-    // Chroma [64..960] → [-0.5, 0.5], neutral at 512
-    let y  = (c.x - 64.0  / 1023.0) / (876.0 / 1023.0);
-    let cb = (c.y - 512.0 / 1023.0) / (896.0 / 1023.0);
-    let cr = (c.z - 512.0 / 1023.0) / (896.0 / 1023.0);
+    // this is based on bt2020 doc
+    // https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2020-2-201510-I!!PDF-E.pdf
 
-    // BT.2020 NCL matrix (Kr=0.2627, Kb=0.0593)
-    let r = y                 + 1.4746  * cr;
-    let g = y - 0.16455 * cb - 0.57135 * cr;
-    let b = y + 1.8814  * cb;
-    return vec3<f32>(r, g, b) / 10000.;
+    // dequantize.
+    let y = (c.x / 4. - 16.) / 219.;
+    let cb = (c.y / 4. - 128.) / 224.;
+    let cr = (c.z / 4. - 128.) / 224.;
 
-    // return vec3<f32>(y, y, y) / 350.;
+    // extract r, g, b
+    let r = cr * 1.4746 + y;
+    let b = cb * 1.8814 + y;
+    let g = (y - 0.2627 * r - 0.0593 * b) / 0.6780;
+
+    return vec3<f32>(r, g, b);
 }
 
 @fragment
