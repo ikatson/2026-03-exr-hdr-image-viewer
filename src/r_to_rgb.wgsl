@@ -550,6 +550,25 @@ fn convert_yuv_to_rgb(c: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(r, g, b);
 }
 
+fn pq_eotf_component(c: f32) -> f32 {
+    let e_tmp = pow(c, 1. / 78.84375);
+    // bt2100 doc
+    return pow(
+        max(e_tmp - 0.8359375, 0.) / (18.8515625 - 18.6875 * e_tmp),
+        1. / 0.1593017578125
+    );
+}
+
+fn pq_eotf(c: vec3<f32>) -> vec3<f32> {
+    // [0-1] non-lilnear (PQ) rgb -> [0-10000] absolute nits
+    // You can divide by e.g. 203 (HDR reference white per bt2100) to normalize to 1.0 as SDR max
+    return 10000. * vec3(
+        pq_eotf_component(c.r),
+        pq_eotf_component(c.g),
+        pq_eotf_component(c.b),
+    );
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
@@ -558,7 +577,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let b = sample_channel(b_tex, uv);
     var color = vec3<f32>(r, g, b);
     if params.is_yuv == 1 {
+        // [0-65535] -> [0-1] rgb
         color = convert_yuv_to_rgb(color);
+        // [0-1] rgb -> [0-1] linear, where 1 is 10000 nits
+        color = pq_eotf(color);
+        // normalize to "reference white", 203 nits (from bt2100 hdr reference white)
+        // kind of poor mans filmmaker mode value
+        color = color / 203.;
     }
     color *= params.exposure;
     color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.sdr_white_vs_input;
