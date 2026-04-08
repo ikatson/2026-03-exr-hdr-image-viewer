@@ -267,11 +267,10 @@ impl State {
 
     fn refresh_overlay_text(&mut self) {
         let mut text = format!(
-            "EXP {:.2} TM {} SDR-MULT {:.2} PEAK {:.2}",
+            "EXP {:.2} TM {} PEAK {:.2}",
             self.renderer.exposure,
             self.tone_map_label(),
-            self.renderer.hdr.sdr_white_vs_input,
-            self.renderer.hdr.peak_luma_vs_sdr_white,
+            self.renderer.hdr.peak_luma_nits,
         );
         if let Some([r, g, b]) = self.picked_source_rgb {
             text.push_str(&format!(" IN {:.2} {:.2} {:.2}", r, g, b));

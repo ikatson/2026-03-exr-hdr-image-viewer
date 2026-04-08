@@ -32,8 +32,8 @@ impl ToneMapMode {
 #[derive(Copy, Clone, Default)]
 struct ShaderParams {
     exposure: f32,
-    sdr_white_vs_input: f32,
-    peak_luma_vs_sdr_white: f32,
+    peak_luma_nits: f32,
+    nits_to_output_scale: f32,
     tone_map_mode: u32,
     is_yuv: u32,
 }
@@ -211,8 +211,8 @@ impl RenderPipelineState {
         let params = ShaderParams {
             exposure: self.exposure,
             tone_map_mode: self.tone_map_mode as u32,
-            sdr_white_vs_input: self.hdr.sdr_white_vs_input,
-            peak_luma_vs_sdr_white: self.hdr.peak_luma_vs_sdr_white,
+            peak_luma_nits: self.hdr.peak_luma_nits,
+            nits_to_output_scale: self.hdr.nits_to_output_scale,
             is_yuv: 1, // todo
         };
         queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));

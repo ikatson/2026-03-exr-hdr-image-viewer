@@ -1,14 +1,16 @@
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DisplayHDR {
-    pub sdr_white_vs_input: f32,
-    pub peak_luma_vs_sdr_white: f32,
+    pub sdr_white_nits: f32,
+    pub peak_luma_nits: f32,
+    pub nits_to_output_scale: f32,
 }
 
 impl Default for DisplayHDR {
     fn default() -> Self {
         Self {
-            sdr_white_vs_input: 1.,
-            peak_luma_vs_sdr_white: 1.,
+            sdr_white_nits: 300.,
+            peak_luma_nits: 300.,
+            nits_to_output_scale: 1. / 300.,
         }
     }
 }

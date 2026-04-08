@@ -32,8 +32,12 @@ pub fn macos_edr_headroom(window: &Window) -> Option<DisplayHDR> {
     //     unsafe { msg_send![ns_screen, maximumExtendedDynamicRangeColorComponentValue] };
     // dbg!((current, potential));
 
+    const SDR_WHITE_NITS: f32 = 300.;
+    const NITS_TO_OUTPUT_SCALE: f32 = 1. / SDR_WHITE_NITS;
+
     Some(DisplayHDR {
-        sdr_white_vs_input: 1.,
-        peak_luma_vs_sdr_white: current as f32,
+        sdr_white_nits: SDR_WHITE_NITS,
+        peak_luma_nits: (SDR_WHITE_NITS as f64 * current) as f32,
+        nits_to_output_scale: NITS_TO_OUTPUT_SCALE,
     })
 }

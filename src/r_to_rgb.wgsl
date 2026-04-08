@@ -12,8 +12,8 @@ var channel_sampler: sampler;
 
 struct Params {
     exposure: f32,
-    sdr_white_vs_input: f32, // on windows, this is > 1. means we need to scale the output at the end so that 1.0 = 80 nits
-    peak_luma_vs_sdr_white: f32, // peak luma relative to 1. (SDR white). For peak luma computations.
+    peak_luma_nits: f32,
+    nits_to_output_scale: f32,
     tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: Reno ACES, 3: GT7, 4: Reinhard, 5: Neutwo
     is_yuv: u32,
 };
@@ -672,25 +672,25 @@ fn fs_main(in: VsOut) -> FsOut {
     let b = sample_channel(b_tex, uv);
     var color = vec3<f32>(r, g, b);
     var debug_value = color;
+
     if params.is_yuv == 1 {
         // [0-65535] -> [0-1] rgb
         color = convert_yuv_to_rgb(color);
 
+        // Apply exposure. For PQ it's done
         color = pq_exposure(color, params.exposure);
 
-        color = apply_bt2390_eetf(color, 0.1, 300 * params.peak_luma_vs_sdr_white);
+        color = apply_bt2390_eetf(color, 0.1, params.peak_luma_nits);
 
         // [0-1] rgb -> [0-10000] linear
         color = pq_eotf(color);
         debug_value = color;
-        // normalize to SDR max white (so that 1. == SDR max). At least on OSX this is fine.
-        // on windows TBD
-        color = color / 300.;
 
-        // output is linear rec 709 on Windows and seemingy on OSX too
+        // output for WGSL is linear rec 709 on Windows and seemingy on OSX too
         color = bt2020_to_709(color);
     }
+    color = color * params.nits_to_output_scale;
     // color *= params.exposure;
-    color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.sdr_white_vs_input;
+    // color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.nits_to_output_scale;
     return FsOut(vec4<f32>(color, 1.0), vec4<f32>(debug_value, 1.0));
 }
