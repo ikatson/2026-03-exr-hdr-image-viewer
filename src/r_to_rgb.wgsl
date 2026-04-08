@@ -695,6 +695,7 @@ fn fs_main(in: VsOut) -> FsOut {
         // color = bt2020_to_709(color);
     } else {
         color = color * params.sdr_white_nits;
+        // color = bt2020_to_709(color);
     }
     color *= params.exposure;
     color = tonemap_nits(color, params.tone_map_mode, params.sdr_white_nits, params.peak_luma_nits);
