@@ -26,6 +26,11 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
 };
 
+struct FsOut {
+    @location(0) color: vec4<f32>,
+    @location(1) debug: vec4<f32>,
+};
+
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     var positions = array<vec2<f32>, 3>(
@@ -660,12 +665,13 @@ fn pq_exposure(pq_input: vec3<f32>, exp: f32) -> vec3<f32> {
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut) -> FsOut {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
     let r = sample_channel(r_tex, uv);
     let g = sample_channel(g_tex, uv);
     let b = sample_channel(b_tex, uv);
     var color = vec3<f32>(r, g, b);
+    var debug_value = color;
     if params.is_yuv == 1 {
         // [0-65535] -> [0-1] rgb
         color = convert_yuv_to_rgb(color);
@@ -674,8 +680,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
         color = apply_bt2390_eetf(color, 0.1, 300 * params.peak_luma_vs_sdr_white);
 
-        // [0-1] rgb -> [0-1] linear, where 1 is 10000 nits
+        // [0-1] rgb -> [0-10000] linear
         color = pq_eotf(color);
+        debug_value = color;
         // normalize to SDR max white (so that 1. == SDR max). At least on OSX this is fine.
         // on windows TBD
         color = color / 300.;
@@ -685,5 +692,5 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     // color *= params.exposure;
     color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.sdr_white_vs_input;
-    return vec4<f32>(color, 1.0);
+    return FsOut(vec4<f32>(color, 1.0), vec4<f32>(debug_value, 1.0));
 }

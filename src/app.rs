@@ -76,19 +76,23 @@ struct State {
     surface_format: wgpu::TextureFormat,
     renderer: RenderPipelineState,
     picker: GpuPicker,
-    output_picker: OutputPicker,
+    debug_picker: OutputPicker,
     blitter: BlitPipeline,
     display_texture: wgpu::Texture,
     display_texture_view: wgpu::TextureView,
+    debug_texture: wgpu::Texture,
+    debug_texture_view: wgpu::TextureView,
     text_overlay: TextOverlay,
     cursor_pos: Option<PhysicalPosition<f64>>,
     picked_source_rgb: Option<[f32; 3]>,
-    picked_output_rgb: Option<[f32; 3]>,
+    picked_debug_rgb: Option<[f32; 3]>,
     left_mouse_down: bool,
     hdr: crate::display_hdr::DisplayHDR,
 }
 
 impl State {
+    const DEBUG_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba32Float;
+
     async fn new(display: OwnedDisplayHandle, window: Arc<Window>, image_path: &str) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
             Box::new(display),
@@ -114,8 +118,14 @@ impl State {
 
         let (r_view, g_view, b_view) = open_image(&device, &queue, Path::new(image_path)).unwrap();
 
-        let mut renderer =
-            RenderPipelineState::new(&device, surface_format, &r_view, &g_view, &b_view);
+        let mut renderer = RenderPipelineState::new(
+            &device,
+            surface_format,
+            Self::DEBUG_TEXTURE_FORMAT,
+            &r_view,
+            &g_view,
+            &b_view,
+        );
         let hdr = platform::get_hdr_params(&window).unwrap();
         renderer.update_shader_params(&queue);
         renderer.hdr = hdr;
@@ -126,7 +136,13 @@ impl State {
             size.height.max(1),
             surface_format,
         );
-        let output_picker = OutputPicker::new(&device, surface_format);
+        let (debug_texture, debug_texture_view) = create_display_texture(
+            &device,
+            size.width.max(1),
+            size.height.max(1),
+            Self::DEBUG_TEXTURE_FORMAT,
+        );
+        let debug_picker = OutputPicker::new(&device, Self::DEBUG_TEXTURE_FORMAT);
         let blitter = BlitPipeline::new(&device, surface_format, &display_texture_view);
         let text_overlay = TextOverlay::new(
             &device,
@@ -145,14 +161,16 @@ impl State {
             surface_format,
             renderer,
             picker,
-            output_picker,
+            debug_picker,
             blitter,
             display_texture,
             display_texture_view,
+            debug_texture,
+            debug_texture_view,
             text_overlay,
             cursor_pos: None,
             picked_source_rgb: None,
-            picked_output_rgb: None,
+            picked_debug_rgb: None,
             left_mouse_down: false,
             hdr,
             window,
@@ -196,8 +214,16 @@ impl State {
             self.size.height.max(1),
             self.surface_format,
         );
+        let (debug_texture, debug_texture_view) = create_display_texture(
+            &self.device,
+            self.size.width.max(1),
+            self.size.height.max(1),
+            Self::DEBUG_TEXTURE_FORMAT,
+        );
         self.display_texture = display_texture;
         self.display_texture_view = display_texture_view;
+        self.debug_texture = debug_texture;
+        self.debug_texture_view = debug_texture_view;
         self.blitter
             .update_source(&self.device, &self.display_texture_view);
         self.text_overlay
@@ -250,8 +276,8 @@ impl State {
         if let Some([r, g, b]) = self.picked_source_rgb {
             text.push_str(&format!(" IN {:.2} {:.2} {:.2}", r, g, b));
         }
-        if let Some([r, g, b]) = self.picked_output_rgb {
-            text.push_str(&format!(" OUT {:.2} {:.2} {:.2}", r, g, b));
+        if let Some([r, g, b]) = self.picked_debug_rgb {
+            text.push_str(&format!(" DBG {:.2} {:.2} {:.2}", r, g, b));
         }
         self.text_overlay.set_text(&self.queue, &text);
     }
@@ -298,10 +324,10 @@ impl State {
             self.picked_source_rgb = Some([r, g, b]);
         }
         if let Some([r, g, b]) =
-            self.output_picker
-                .pick_rgb(&self.device, &self.queue, &self.display_texture, xy)
+            self.debug_picker
+                .pick_rgb(&self.device, &self.queue, &self.debug_texture, xy)
         {
-            self.picked_output_rgb = Some([r, g, b]);
+            self.picked_debug_rgb = Some([r, g, b]);
         }
         self.refresh_overlay_text();
     }
@@ -335,15 +361,26 @@ impl State {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.display_texture_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &self.display_texture_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &self.debug_texture_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+            ],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,

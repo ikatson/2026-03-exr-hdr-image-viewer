@@ -61,6 +61,7 @@ impl RenderPipelineState {
     pub fn new(
         device: &wgpu::Device,
         surface_format: TextureFormat,
+        debug_format: TextureFormat,
         r_view: &wgpu::TextureView,
         g_view: &wgpu::TextureView,
         b_view: &wgpu::TextureView,
@@ -176,11 +177,18 @@ impl RenderPipelineState {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: debug_format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
