@@ -260,8 +260,6 @@ impl State {
             crate::renderer::ToneMapMode::GranTurismo7 => "GT7",
             crate::renderer::ToneMapMode::Reinhard => "RH",
             crate::renderer::ToneMapMode::Neutwo => "NEU",
-            crate::renderer::ToneMapMode::RenoAces => "RENO-ACES",
-            crate::renderer::ToneMapMode::AgX => "AGX",
             crate::renderer::ToneMapMode::Bt2390 => "BT2390",
         }
     }
