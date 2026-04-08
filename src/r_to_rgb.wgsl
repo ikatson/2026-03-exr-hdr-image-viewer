@@ -678,27 +678,13 @@ fn fs_main(in: VsOut) -> FsOut {
         color = convert_yuv_to_rgb(color);
         // [0-1] rgb -> [0-10000] linear
         color = pq_eotf(color);
-
-        // output for WGSL is linear rec 709 on Windows and seemingy on OSX too
         color = bt2020_to_709(color);
-
-        // // Apply exposure. For PQ it's done
-        // color = pq_exposure(color, params.exposure);
-
-        // color = apply_bt2390_eetf(color, 0.1, params.peak_luma_nits);
-
-        // // [0-1] rgb -> [0-10000] linear
-        // color = pq_eotf(color);
-        // debug_value = color;
-
-        //
-        // color = bt2020_to_709(color);
     } else {
         color = color * params.sdr_white_nits;
-        // color = bt2020_to_709(color);
     }
     color *= params.exposure;
     color = tonemap_nits(color, params.tone_map_mode, params.sdr_white_nits, params.peak_luma_nits);
+    debug_value = color;
     color = color * params.nits_to_output_scale;
     return FsOut(vec4<f32>(color, 1.0), vec4<f32>(debug_value, 1.0));
 }
