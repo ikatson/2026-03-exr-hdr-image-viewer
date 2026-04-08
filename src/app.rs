@@ -3,7 +3,6 @@ use std::sync::Arc;
 #[cfg(not(target_os = "macos"))]
 use std::thread;
 
-use exr::prelude::{FlatSamples, read_all_data_from_file};
 use wgpu::util::DeviceExt;
 use wgpu::{Device, Queue, TextureView};
 use wgpu::{Extent3d, TextureDescriptor, TextureFormat, TextureUsages, wgt::TextureViewDescriptor};
@@ -262,6 +261,7 @@ impl State {
             crate::renderer::ToneMapMode::Neutwo => "NEU",
             crate::renderer::ToneMapMode::RenoAces => "RENO-ACES",
             crate::renderer::ToneMapMode::AgX => "AGX",
+            crate::renderer::ToneMapMode::Bt2390 => "BT2390",
         }
     }
 
@@ -444,14 +444,14 @@ fn create_display_texture(
 
 pub struct App {
     state: Option<State>,
-    exr_path: String,
+    img_path: String,
 }
 
 impl App {
     pub fn new(exr_path: String) -> Self {
         Self {
             state: None,
-            exr_path,
+            img_path: exr_path,
         }
     }
 }
@@ -467,7 +467,7 @@ impl ApplicationHandler for App {
         let state = pollster::block_on(State::new(
             event_loop.owned_display_handle(),
             window.clone(),
-            &self.exr_path,
+            &self.img_path,
         ));
         self.state = Some(state);
 
@@ -691,35 +691,8 @@ fn open_image(
             }
         }
 
-        if false {
-            // openexr
-            let img = read_all_data_from_file(path).unwrap();
-            let first_layer = &img.layer_data[0];
-            let channels = &first_layer.channel_data.list;
-            let image_width: u32 = first_layer.size.width().try_into().unwrap();
-            let image_height: u32 = first_layer.size.height().try_into().unwrap();
-
-            let channel_values = |name: &str| -> Vec<f32> {
-                let channel = channels
-                    .iter()
-                    .find(|c| c.name.eq(name))
-                    .unwrap_or_else(|| {
-                        panic!("missing EXR channel: {name}");
-                    });
-                let data = match &channel.sample_data.levels_as_slice()[0] {
-                    FlatSamples::F32(data) => data.as_slice(),
-                    _ => panic!("unsupported sample format for channel: {name}"),
-                };
-                data.to_vec()
-            };
-
-            let channel_r = channel_values("R");
-            let channel_g = channel_values("G");
-            let channel_b = channel_values("B");
-            let expected_len = (image_width * image_height) as usize;
-            assert_eq!(channel_r.len(), expected_len, "unexpected R channel size");
-            assert_eq!(channel_g.len(), expected_len, "unexpected G channel size");
-            assert_eq!(channel_b.len(), expected_len, "unexpected B channel size");
+        if path.extension().is_some_and(|e| e == "exr") {
+            dbg!(::exr::prelude::read_all_data_from_file(path).unwrap());
         }
 
         let create_channel_view = |label: &'static str, values: &[f32]| {

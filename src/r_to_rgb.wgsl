@@ -12,9 +12,10 @@ var channel_sampler: sampler;
 
 struct Params {
     exposure: f32,
+    sdr_white_nits: f32,
     peak_luma_nits: f32,
     nits_to_output_scale: f32,
-    tone_map_mode: u32, // 0: passthrough, 1: ACES, 2: Reno ACES, 3: GT7, 4: Reinhard, 5: Neutwo
+    tone_map_mode: u32,
     is_yuv: u32,
 };
 
@@ -513,27 +514,33 @@ fn agx_tonemap(color: vec3<f32>, peak: f32) -> vec3<f32> {
     return max(c, vec3<f32>(0.0)) * peak;
 }
 
-fn tonemap(color: vec3<f32>, tone_map_mode: u32, peak: f32) -> vec3<f32> {
+fn tonemap_nits(color: vec3<f32>, tone_map_mode: u32, sdr_white_nits: f32, peak: f32) -> vec3<f32> {
     if tone_map_mode == 0u {
         return color;
     }
     if tone_map_mode == 1u {
-        return neutwo_tonemap(color, peak);
+        return neutwo_tonemap(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 2u {
-        return gt7_tonemap(color, peak);
+        return gt7_tonemap(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 3u {
-        return reinhard_tonemap(color);
+        return reinhard_tonemap(color / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 4u {
-        return aces_hdr(color, peak);
+        return aces_hdr(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 5u {
-        return reno_aces_hdr(color, peak);
+        return reno_aces_hdr(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 6u {
-        return agx_tonemap(color, peak);
+        return agx_tonemap(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
+    }
+    if tone_map_mode == 7u {
+        var c = pq_eotf_inv(color);
+        c = apply_bt2390_eetf(c, 0.01, params.peak_luma_nits);
+        c = pq_eotf(c);
+        return c;
     }
     return color;
 }
@@ -588,7 +595,6 @@ fn pq_eotf_inv(c: vec3<f32>) -> vec3<f32> {
 
 fn pq_eotf(c: vec3<f32>) -> vec3<f32> {
     // [0-1] non-lilnear (PQ) rgb -> [0-10000] absolute nits
-    // You can divide by e.g. 203 (HDR reference white per bt2100) to normalize to 1.0 as SDR max
     return vec3(
         pq_eotf_component(c.r),
         pq_eotf_component(c.g),
@@ -658,12 +664,6 @@ fn eetf_component(e1: f32, ks: f32, max_lum: f32, b: f32) -> f32 {
     return e2 + b * pow(1.0 - e2, 4.0);
 }
 
-fn pq_exposure(pq_input: vec3<f32>, exp: f32) -> vec3<f32> {
-    var c = pq_eotf(pq_input);
-    c *= exp;
-    return pq_eotf_inv(c);
-}
-
 @fragment
 fn fs_main(in: VsOut) -> FsOut {
     let uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
@@ -676,21 +676,29 @@ fn fs_main(in: VsOut) -> FsOut {
     if params.is_yuv == 1 {
         // [0-65535] -> [0-1] rgb
         color = convert_yuv_to_rgb(color);
-
-        // Apply exposure. For PQ it's done
-        color = pq_exposure(color, params.exposure);
-
-        color = apply_bt2390_eetf(color, 0.1, params.peak_luma_nits);
-
         // [0-1] rgb -> [0-10000] linear
         color = pq_eotf(color);
-        debug_value = color;
 
         // output for WGSL is linear rec 709 on Windows and seemingy on OSX too
         color = bt2020_to_709(color);
+
+        // // Apply exposure. For PQ it's done
+        // color = pq_exposure(color, params.exposure);
+
+        // color = apply_bt2390_eetf(color, 0.1, params.peak_luma_nits);
+
+        // // [0-1] rgb -> [0-10000] linear
+        // color = pq_eotf(color);
+        // debug_value = color;
+
+        //
+        // color = bt2020_to_709(color);
+    } else {
+        color = color * params.sdr_white_nits;
     }
+    color *= params.exposure;
+    color = tonemap_nits(color, params.tone_map_mode, params.sdr_white_nits, params.peak_luma_nits);
+    debug_value = color;
     color = color * params.nits_to_output_scale;
-    // color *= params.exposure;
-    // color = tonemap(color, params.tone_map_mode, params.peak_luma_vs_sdr_white) * params.nits_to_output_scale;
     return FsOut(vec4<f32>(color, 1.0), vec4<f32>(debug_value, 1.0));
 }

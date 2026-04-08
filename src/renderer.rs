@@ -12,12 +12,14 @@ pub enum ToneMapMode {
     Aces = 4,
     RenoAces = 5,
     AgX = 6,
+    Bt2390 = 7,
 }
 
 impl ToneMapMode {
     pub fn next(self) -> Self {
         match self {
-            ToneMapMode::Off => ToneMapMode::Neutwo,
+            ToneMapMode::Off => ToneMapMode::Bt2390,
+            ToneMapMode::Bt2390 => ToneMapMode::Neutwo,
             ToneMapMode::Neutwo => ToneMapMode::GranTurismo7,
             ToneMapMode::GranTurismo7 => ToneMapMode::Reinhard,
             ToneMapMode::Reinhard => ToneMapMode::Aces,
@@ -32,6 +34,7 @@ impl ToneMapMode {
 #[derive(Copy, Clone, Default)]
 struct ShaderParams {
     exposure: f32,
+    sdr_white_nits: f32,
     peak_luma_nits: f32,
     nits_to_output_scale: f32,
     tone_map_mode: u32,
@@ -212,6 +215,7 @@ impl RenderPipelineState {
             exposure: self.exposure,
             tone_map_mode: self.tone_map_mode as u32,
             peak_luma_nits: self.hdr.peak_luma_nits,
+            sdr_white_nits: self.hdr.sdr_white_nits,
             nits_to_output_scale: self.hdr.nits_to_output_scale,
             is_yuv: 1, // todo
         };
