@@ -698,7 +698,6 @@ fn fs_main(in: VsOut) -> FsOut {
     }
     color *= params.exposure;
     color = tonemap_nits(color, params.tone_map_mode, params.sdr_white_nits, params.peak_luma_nits);
-    debug_value = color;
     color = color * params.nits_to_output_scale;
     return FsOut(vec4<f32>(color, 1.0), vec4<f32>(debug_value, 1.0));
 }

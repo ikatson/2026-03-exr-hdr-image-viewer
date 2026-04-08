@@ -58,6 +58,7 @@ pub struct RenderPipelineState {
     pub hdr: DisplayHDR,
     pub exposure: f32,
     pub tone_map_mode: ToneMapMode,
+    is_yuv: u32,
 }
 
 impl RenderPipelineState {
@@ -68,6 +69,7 @@ impl RenderPipelineState {
         r_view: &wgpu::TextureView,
         g_view: &wgpu::TextureView,
         b_view: &wgpu::TextureView,
+        is_yuv: bool,
     ) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rgb-texture-bind-group-layout"),
@@ -207,6 +209,7 @@ impl RenderPipelineState {
             tone_map_mode: ToneMapMode::Off,
             hdr: DisplayHDR::default(),
             exposure: 1.,
+            is_yuv: is_yuv as u32,
         }
     }
 
@@ -217,7 +220,7 @@ impl RenderPipelineState {
             peak_luma_nits: self.hdr.peak_luma_nits,
             sdr_white_nits: self.hdr.sdr_white_nits,
             nits_to_output_scale: self.hdr.nits_to_output_scale,
-            is_yuv: 1, // todo
+            is_yuv: self.is_yuv,
         };
         queue.write_buffer(&self.params_buffer, 0, shader_params_as_bytes(&params));
     }

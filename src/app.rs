@@ -124,6 +124,7 @@ impl State {
             &r_view,
             &g_view,
             &b_view,
+            image_path.ends_with(".yuv"),
         );
         let hdr = platform::get_hdr_params(&window).unwrap();
         renderer.update_shader_params(&queue);
