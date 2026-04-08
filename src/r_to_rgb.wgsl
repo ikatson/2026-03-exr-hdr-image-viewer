@@ -248,11 +248,11 @@ fn apply_bt2390_eetf(e_prime: vec3<f32>, display_min_nits: f32, display_max_nits
     // Assuming content was mastered for the full PQ range if LB/LW are unknown.
     // lw might be maxfall .e.g 4000 or 1000
     let lb = 0.0;
-    let lw = 4000.0;
+    let lw = 3696.0;
 
     // Target display (Your monitor)
-    let l_min = display_min_nits;   // Typical LCD black floor in nits
-    let l_max = display_max_nits; // Your empirical 300 nits peak
+    let l_min = display_min_nits;
+    let l_max = display_max_nits;
 
     // Helper: Normalized PQ inverse (eotf^-1)
     let e_1 = (e_prime - pq_eotf_inv_component(lb)) / (pq_eotf_inv_component(lw) - pq_eotf_inv_component(lb));
