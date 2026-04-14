@@ -31,16 +31,18 @@ use crate::display_hdr::DisplayHDR;
 pub fn windows_hdr_state(window: &Window) -> Option<DisplayHDR> {
     let output = dxgi_output_for_window(window)?;
     // dbg!(&output.desc);
-    let sdr_white_nits = sdr_white_level_nits(&output.device_name).unwrap();
+    // let sdr_white_nits = sdr_white_level_nits(&output.device_name).unwrap();
+    // dbg!(&output.desc);
     let peak_nits = output.desc.MaxLuminance;
 
     // dbg!((sdr_white_nits, peak_nits));
 
-    let sdr_white_vs_input = sdr_white_nits / 80.0;
-    let peak_luma_vs_sdr_white = peak_nits / sdr_white_nits;
+    // let sdr_white_vs_input = sdr_white_nits / 80.0;
+    // let peak_luma_vs_sdr_white = peak_nits / sdr_white_nits;
     Some(DisplayHDR {
-        sdr_white_vs_input,
-        peak_luma_vs_sdr_white,
+        sdr_white_nits: 300.,
+        peak_luma_nits: peak_nits,
+        nits_to_output_scale: 1. / 80.0,
     })
 }
 
