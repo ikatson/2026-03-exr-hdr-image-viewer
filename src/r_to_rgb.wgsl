@@ -131,15 +131,15 @@ fn gt7_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
     );
 }
 
-fn reinhard_tonemap_component(x: f32) -> f32 {
-    return x / (1.0 + x);
+fn reinhard_tonemap_component(x: f32, peak: f32) -> f32 {
+    return x * (1 + x/(peak * peak)) / (1.0 + x);
 }
 
-fn reinhard_tonemap(x: vec3<f32>) -> vec3<f32> {
+fn reinhard_tonemap(x: vec3<f32>, peak: f32) -> vec3<f32> {
     return vec3<f32>(
-        reinhard_tonemap_component(x.r),
-        reinhard_tonemap_component(x.g),
-        reinhard_tonemap_component(x.b),
+        reinhard_tonemap_component(x.r, peak),
+        reinhard_tonemap_component(x.g, peak),
+        reinhard_tonemap_component(x.b, peak),
     );
 }
 
@@ -159,16 +159,14 @@ fn tonemap_nits(color: vec3<f32>, tone_map_mode: u32, sdr_white_nits: f32, peak:
         return gt7_tonemap(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 3u {
-        return reinhard_tonemap(color / sdr_white_nits) * sdr_white_nits;
+        return reinhard_tonemap(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 4u {
         return aces_hdr(color / sdr_white_nits, peak / sdr_white_nits) * sdr_white_nits;
     }
     if tone_map_mode == 7u {
-        var c = pq_eotf_inv(color);
-        c = apply_bt2390_eetf(c, 0.01, params.peak_luma_nits);
-        c = pq_eotf(c);
-        return c;
+        // this works only in bt2020
+        return color;
     }
     return color;
 }
@@ -248,7 +246,7 @@ fn apply_bt2390_eetf(e_prime: vec3<f32>, display_min_nits: f32, display_max_nits
     // Assuming content was mastered for the full PQ range if LB/LW are unknown.
     // lw might be maxfall .e.g 4000 or 1000
     let lb = 0.0;
-    let lw = 3696.0;
+    let lw = 10000.0;
 
     // Target display (Your monitor)
     let l_min = display_min_nits;
@@ -304,13 +302,22 @@ fn fs_main(in: VsOut) -> FsOut {
     if params.is_yuv == 1 {
         // [0-65535] -> [0-1] rgb
         color = convert_yuv_to_rgb(color);
+        if (abs(params.exposure - 1.) > 0.01) {
+            color = pq_eotf(color);
+            color *= params.exposure;
+            color = pq_eotf_inv(color);
+        }
+        if (params.tone_map_mode == 7u) {
+            color = apply_bt2390_eetf(color, 0., params.peak_luma_nits);
+        }
         // [0-1] rgb -> [0-10000] linear
         color = pq_eotf(color);
         color = bt2020_to_709(color);
     } else {
         color = color * params.sdr_white_nits;
+        color *= params.exposure;
     }
-    color *= params.exposure;
+
     color = tonemap_nits(color, params.tone_map_mode, params.sdr_white_nits, params.peak_luma_nits);
     debug_value = color;
     color = color * params.nits_to_output_scale;

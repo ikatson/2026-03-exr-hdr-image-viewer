@@ -1,13 +1,14 @@
 use std::mem::size_of;
 
 use windows::{
+    core::Interface,
     Win32::{
         Devices::Display::{
+            DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
             DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL,
             DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
             DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SDR_WHITE_LEVEL,
-            DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo,
-            GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
+            DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
         },
         Foundation::{ERROR_INSUFFICIENT_BUFFER, HWND, RECT},
         Graphics::Dxgi::{
@@ -15,11 +16,10 @@ use windows::{
                 DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
                 DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,
             },
-            CreateDXGIFactory1, DXGI_OUTPUT_DESC1, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput6,
+            CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput6, DXGI_OUTPUT_DESC1,
         },
         UI::WindowsAndMessaging::GetWindowRect,
     },
-    core::Interface,
 };
 use winit::{
     raw_window_handle::{HasWindowHandle, RawWindowHandle},
