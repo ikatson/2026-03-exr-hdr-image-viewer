@@ -14,15 +14,22 @@ pub enum ToneMapMode {
 }
 
 impl ToneMapMode {
-    pub fn next(self) -> Self {
-        match self {
-            ToneMapMode::Off => ToneMapMode::Bt2390,
-            ToneMapMode::Bt2390 => ToneMapMode::Neutwo,
-            ToneMapMode::Neutwo => ToneMapMode::GranTurismo7,
-            ToneMapMode::GranTurismo7 => ToneMapMode::Reinhard,
-            ToneMapMode::Reinhard => ToneMapMode::Aces,
-            ToneMapMode::Aces => ToneMapMode::Off,
-        }
+    const ORDER: [Self; 6] = [
+        ToneMapMode::Off,
+        ToneMapMode::Bt2390,
+        ToneMapMode::Neutwo,
+        ToneMapMode::GranTurismo7,
+        ToneMapMode::Reinhard,
+        ToneMapMode::Aces,
+    ];
+
+    pub fn cycle(self, offset: isize) -> Self {
+        let index = Self::ORDER
+            .iter()
+            .position(|mode| *mode == self)
+            .expect("tone map mode must be present in cycle order");
+        let next_index = (index as isize + offset).rem_euclid(Self::ORDER.len() as isize) as usize;
+        Self::ORDER[next_index]
     }
 }
 

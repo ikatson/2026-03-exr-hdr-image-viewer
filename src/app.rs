@@ -11,7 +11,7 @@ use winit::{
     dpi::PhysicalPosition,
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, OwnedDisplayHandle},
-    keyboard::{KeyCode, PhysicalKey},
+    keyboard::{KeyCode, ModifiersState, PhysicalKey},
     window::{Fullscreen, Window, WindowId},
 };
 
@@ -86,6 +86,7 @@ struct State {
     picked_source_rgb: Option<[f32; 3]>,
     picked_debug_rgb: Option<[f32; 3]>,
     left_mouse_down: bool,
+    modifiers: ModifiersState,
     hdr: crate::display_hdr::DisplayHDR,
     hdr_peak_luma_override: Option<f32>,
 }
@@ -173,6 +174,7 @@ impl State {
             picked_source_rgb: None,
             picked_debug_rgb: None,
             left_mouse_down: false,
+            modifiers: ModifiersState::default(),
             hdr,
             hdr_peak_luma_override: None,
             window,
@@ -184,7 +186,7 @@ impl State {
         println!(
             "controls: - = peak luminance / 1.1, = = peak luminance * 1.1, 0 = OS peak luminance"
         );
-        println!("controls: T = cycle tone mapping");
+        println!("controls: T = cycle tone mapping, Shift+T = cycle tone mapping backwards");
         println!("controls: F = toggle fullscreen");
         let mut state = state;
         state.refresh_overlay_text();
@@ -336,8 +338,8 @@ impl State {
         self.apply_hdr_params();
     }
 
-    fn cycle_tone_map(&mut self) {
-        self.renderer.tone_map_mode = self.renderer.tone_map_mode.next();
+    fn cycle_tone_map(&mut self, offset: isize) {
+        self.renderer.tone_map_mode = self.renderer.tone_map_mode.cycle(offset);
         self.renderer.update_shader_params(&self.queue);
         self.refresh_overlay_text();
     }
@@ -547,6 +549,9 @@ impl ApplicationHandler for App {
             } => {
                 state.left_mouse_down = false;
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                state.modifiers = modifiers.state();
+            }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
@@ -554,7 +559,10 @@ impl ApplicationHandler for App {
                     PhysicalKey::Code(KeyCode::Minus) => state.adjust_peak_luminance(1.0 / 1.1),
                     PhysicalKey::Code(KeyCode::Equal) => state.adjust_peak_luminance(1.1),
                     PhysicalKey::Code(KeyCode::Digit0) => state.reset_peak_luminance(),
-                    PhysicalKey::Code(KeyCode::KeyT) => state.cycle_tone_map(),
+                    PhysicalKey::Code(KeyCode::KeyT) if state.modifiers.shift_key() => {
+                        state.cycle_tone_map(-1)
+                    }
+                    PhysicalKey::Code(KeyCode::KeyT) => state.cycle_tone_map(1),
                     PhysicalKey::Code(KeyCode::KeyF) => state.toggle_fullscreen(),
                     _ => {}
                 }
