@@ -87,6 +87,7 @@ struct State {
     picked_debug_rgb: Option<[f32; 3]>,
     left_mouse_down: bool,
     hdr: crate::display_hdr::DisplayHDR,
+    hdr_peak_luma_override: Option<f32>,
 }
 
 impl State {
@@ -127,8 +128,8 @@ impl State {
             image_path.ends_with(".yuv"),
         );
         let hdr = platform::get_hdr_params(&window).unwrap();
-        renderer.update_shader_params(&queue);
         renderer.hdr = hdr;
+        renderer.update_shader_params(&queue);
         let picker = GpuPicker::new(&device, &r_view, &g_view, &b_view);
         let (display_texture, display_texture_view) = create_display_texture(
             &device,
@@ -173,12 +174,16 @@ impl State {
             picked_debug_rgb: None,
             left_mouse_down: false,
             hdr,
+            hdr_peak_luma_override: None,
             window,
         };
 
         state.configure_surface();
         println!("controls: left-click = pick RGB at cursor");
         println!("controls: [ = exposure * 0.9, ] = exposure * 1.1");
+        println!(
+            "controls: - = peak luminance / 1.1, = = peak luminance * 1.1, 0 = OS peak luminance"
+        );
         println!("controls: T = cycle tone mapping");
         println!("controls: F = toggle fullscreen");
         let mut state = state;
@@ -265,11 +270,17 @@ impl State {
     }
 
     fn refresh_overlay_text(&mut self) {
+        let peak_mode = if self.hdr_peak_luma_override.is_some() {
+            "MAN"
+        } else {
+            "OS"
+        };
         let mut text = format!(
-            "EXP {:.2} TM {} PEAK {:.2}",
+            "EXP {:.2} TM {} PEAK {:.2} {}",
             self.renderer.exposure,
             self.tone_map_label(),
             self.renderer.hdr.peak_luma_nits,
+            peak_mode,
         );
         if let Some([r, g, b]) = self.picked_source_rgb {
             text.push_str(&format!(" IN {:.2} {:.2} {:.2}", r, g, b));
@@ -287,14 +298,42 @@ impl State {
             return;
         }
         self.hdr = display_hdr;
-        self.renderer.hdr = display_hdr;
+        self.apply_hdr_params();
+    }
+
+    fn current_hdr_params(&self) -> crate::display_hdr::DisplayHDR {
+        let mut hdr = self.hdr;
+        if let Some(peak_luma_nits) = self.hdr_peak_luma_override {
+            hdr.peak_luma_nits = peak_luma_nits;
+        }
+        hdr
+    }
+
+    fn apply_hdr_params(&mut self) {
+        self.renderer.hdr = self.current_hdr_params();
         self.renderer.update_shader_params(&self.queue);
+        self.refresh_overlay_text();
     }
 
     fn adjust_exposure(&mut self, factor: f32) {
         self.renderer.exposure = (self.renderer.exposure * factor).max(0.001);
         self.renderer.update_shader_params(&self.queue);
         self.refresh_overlay_text();
+    }
+
+    fn adjust_peak_luminance(&mut self, factor: f32) {
+        let peak_luma_nits = self
+            .hdr_peak_luma_override
+            .unwrap_or(self.hdr.peak_luma_nits)
+            .mul_add(factor, 0.0)
+            .clamp(80.0, 10_000.0);
+        self.hdr_peak_luma_override = Some(peak_luma_nits);
+        self.apply_hdr_params();
+    }
+
+    fn reset_peak_luminance(&mut self) {
+        self.hdr_peak_luma_override = None;
+        self.apply_hdr_params();
     }
 
     fn cycle_tone_map(&mut self) {
@@ -512,6 +551,9 @@ impl ApplicationHandler for App {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::BracketLeft) => state.adjust_exposure(0.9),
                     PhysicalKey::Code(KeyCode::BracketRight) => state.adjust_exposure(1.1),
+                    PhysicalKey::Code(KeyCode::Minus) => state.adjust_peak_luminance(1.0 / 1.1),
+                    PhysicalKey::Code(KeyCode::Equal) => state.adjust_peak_luminance(1.1),
+                    PhysicalKey::Code(KeyCode::Digit0) => state.reset_peak_luminance(),
                     PhysicalKey::Code(KeyCode::KeyT) => state.cycle_tone_map(),
                     PhysicalKey::Code(KeyCode::KeyF) => state.toggle_fullscreen(),
                     _ => {}
