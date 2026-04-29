@@ -17,6 +17,11 @@ There's a reference color space "CIE XYZ", where numbers map to real-world color
 
 All other color spaces are usually defined in terms of its relation to XYZ.
 
+Color spaces are usually defined as:
+- red, green, blue primaries expressed as CIE XYZ numbers. I.e. what is "red", "green" and "blue" in real-world values.
+- white point. What is "white" - as a mix of red, green and blue. You may have seem "warm" or "cold" setting on your display for white balance - this shows that "white" is as relative as all other color names unless grounded in physical values which XYZ does.
+- transfer function - more on this below
+
 # Linear color
 The CIE XYZ colorspace is linear - if the numbers are scaled by a constant, e.g. multiplied by 2, it means the color will be the same, but the luminance (physical brightness) will be 2x higher.
 
@@ -26,6 +31,8 @@ In the digital world we can't fit infinite precision into a finite number of byt
 
 So we need to "quantize" - compress the range into the available bandwidth.
 Imagine a color space, and one of it's channels let's call it "red", where 0 would mean absence of red and 1 would mean maximum red.
+
+#### TODO HERE AND BELOW - need to use 255 in math examples
 
 If we had 1 byte to store this range (as is typical for most images), we can only store 256 possible values.
 Naively, we could linearly slice the input range into 256 values 
@@ -70,6 +77,30 @@ Notice how we can represent really low numbers this way! This way our eyes won't
 # SDR
 To understand HDR, we need to understand SDR, as it's easier to compare them than to explain HDR in vacuum.
 
+SDR means:
+- sRGB (images, games) or rec709 (movies, tv) color space
+  - they have the same primaries and white point
+  - different transfer function (approximately gamma 2.2 and gamma 2.4 respectively)
+- 8 bits per channel quantization
+- luminance is relative to your display's max brightness. E.g. 1.0 = max brightness of your display.
+  - It follows that values over 1.0 are out of range - as your display can't become brighter than its own max brightness
+
+Let's take an example random image on the web.
+If its file metadata doesn't explain what color space the values are in, they are in sRGB, by convention. If there was no color space (even implicit), there would be no meaning at all to the pixel values stored in the file!
+
+Let's say this image has a pixel with RGB (0xff, 0xba, 0xba) or (255, 186, 186).
+This maps to a well defined real-world color (in CIE XYZ). Example for green channel:
+- normalize to 0-1: 186/255 ~= 0.73
+- apply EOTF: (186 / 255)**2.2 ~= 0.5 - this makes the color linear. 
+  - If you were making a display, you could send half of max voltage to the green subpixel (if it was perfectly calibrated for sRGB colors and had a perfect voltage-to-light ratio)
+
+# HDR
+Finally we have everything we need to understand the basics of what is HDR.
+
+
+
+The core differences of HDR vs SDR:
+- color space is usually BT2020 - it can represent more colors (ignoring the brightness)
 
 Have you ever seen "RGB" a color represented as 3 values from 0 to 255? That's SDR.
 
