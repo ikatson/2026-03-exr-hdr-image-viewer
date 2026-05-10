@@ -39,6 +39,7 @@ function rgbFullGradient() {
   }
 }
 
+// If sRGB was linear
 function simulatedGradient() {
   /** @type {HTMLCanvasElement} */
   // @ts-ignore
@@ -52,12 +53,11 @@ function simulatedGradient() {
   let c = canvas.getContext("2d");
   for (let i = 0; i < 256; i++) {
     let fcolor = i / 255;
-    // srgb color would be this
-    let color = Math.floor(fcolor * 255);
+    // srgb color would be Math.floor(fcolor * 255)
     // linear brightness
-    let linearBrightness = Math.pow(color / 255, 2.2);
+    let linearBrightness = Math.pow(fcolor, 2.2);
     // truncate linear brightness
-    color = Math.floor(linearBrightness * 255) / 255;
+    let color = Math.floor(linearBrightness * 255) / 255;
     // convert back to srgb
     color = Math.pow(color, 1 / 2.2);
     // truncate again to u8
