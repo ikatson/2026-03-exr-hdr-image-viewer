@@ -1,82 +1,82 @@
 // @ts-check
 
-function hslGradient() {
-  /** @type {HTMLCanvasElement} */
-  // @ts-ignore
-  let canvas = document.getElementById("hsl-gradient");
-  const W = 1024;
-  const H = 100;
+/**
+ * @callback Shader
+ * @param {number} f - Horizontal position normalized (0 to 1)
+ * @returns {string} - CSS Color string
+ */
+
+/**
+ * @param {string} id
+ * @param {Shader} shader
+ */
+function drawCanvas(id, shader) {
+  const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById(id));
+  if (!canvas) return;
+
+  const W = 1024,
+    H = 100;
   canvas.width = W;
   canvas.height = H;
-  /** @type {CanvasRenderingContext2D} */
-  // @ts-ignore
-  let c = canvas.getContext("2d");
-  for (let i = 0; i < 256; i++) {
-    let fcolor = i / 255;
-    let brightness = `${fcolor * 100}%`;
-    console.log(brightness);
-    c.fillStyle = `hsl(0 0 ${brightness})`;
-    c.fillRect((i / 256) * W, 0, ((i + 1) / 256) * W, H);
+  canvas.style.imageRendering = "pixelated";
+
+  const c = canvas.getContext("2d");
+  if (!c) return;
+
+  c.imageSmoothingEnabled = false;
+
+  const steps = 256;
+  for (let i = 0; i < steps; i++) {
+    const f = i / (steps - 1);
+    c.fillStyle = shader(f);
+    // Draw logic: mapped to the 1024 width
+    c.fillRect((i / steps) * W, 0, W / steps + 1, H);
   }
 }
 
-function rgbFullGradient() {
-  /** @type {HTMLCanvasElement} */
-  // @ts-ignore
-  let canvas = document.getElementById("rgb-0-255-gradient");
-  const W = 1024;
-  const H = 100;
-  canvas.width = W;
-  canvas.height = H;
-  /** @type {CanvasRenderingContext2D} */
-  // @ts-ignore
-  let c = canvas.getContext("2d");
-  for (let i = 0; i < 256; i++) {
-    let fcolor = i / 255;
-    let color = Math.floor(fcolor * 255);
-    c.fillStyle = `rgb(${color}, ${color}, ${color})`;
-    c.fillRect((i / 256) * W, 0, ((i + 1) / 256) * W, H);
-  }
-}
+// --- Shaders ---
 
-// If sRGB was linear
-function simulatedGradient() {
-  /** @type {HTMLCanvasElement} */
-  // @ts-ignore
-  let canvas = document.getElementById("simulated-gradient");
-  const W = 1024;
-  const H = 100;
-  canvas.width = W;
-  canvas.height = H;
-  /** @type {CanvasRenderingContext2D} */
-  // @ts-ignore
-  let c = canvas.getContext("2d");
-  for (let i = 0; i < 256; i++) {
-    let fcolor = i / 255;
-    // srgb color would be Math.floor(fcolor * 255)
-    // linear brightness
-    let linearBrightness = Math.pow(fcolor, 2.2);
-    // truncate linear brightness
-    let color = Math.floor(linearBrightness * 255) / 255;
-    // convert back to srgb
-    color = Math.pow(color, 1 / 2.2);
-    // truncate again to u8
-    color = Math.floor(color * 255);
+const hslShader = (f) => `hsl(0 0 ${f * 100})`;
 
-    c.fillStyle = `rgb(${color}, ${color}, ${color})`;
-    c.fillRect((i / 256) * W, 0, ((i + 1) / 256) * W, H);
-  }
-}
+const rgbShader = (f) => {
+  const color = Math.floor(f * 255);
+  return `rgb(${color}, ${color}, ${color})`;
+};
+
+const linearQuantizedShader = (f) => {
+  // 1. Map to linear brightness
+  const linearBrightness = Math.pow(f, 2.2);
+
+  // 2. TRUNCATE in linear space (The "Screw Up" check)
+  // This forces the value into one of 256 physical intensity buckets
+  const quantizedLinear = Math.floor(linearBrightness * 255) / 255;
+
+  // 3. Convert back to sRGB
+  let srgb = Math.pow(quantizedLinear, 1 / 2.2);
+
+  // 4. Final 8-bit quantization for display
+  const color = Math.floor(srgb * 255);
+  return `rgb(${color}, ${color}, ${color})`;
+};
+
+const linearBrightnessGradient = (f) => {
+  const color = Math.pow(f, 1 / 2.2);
+  return `rgb(${color * 100}%, ${color * 100}%, ${color * 100}%)`;
+};
+
+// --- Execution ---
 
 function main() {
-  hslGradient();
-  rgbFullGradient();
-  simulatedGradient();
+  drawCanvas("hsl-gradient", hslShader);
+  drawCanvas("rgb-0-255-gradient", rgbShader);
+  drawCanvas("simulated-gradient", linearQuantizedShader);
+  drawCanvas("linear-brightness-gradient", linearBrightnessGradient);
 }
 
 try {
   main();
 } catch (e) {
-  document.getElementById("error").textContent = `error: ${e}`;
+  const errElem = document.getElementById("error");
+  if (errElem) errElem.textContent = `error: ${e}`;
   throw e;
 }
