@@ -98,29 +98,10 @@ This maps to a well defined real-world color (in CIE XYZ). Example for green cha
 # HDR
 Finally we have everything we need to understand the basics of what is HDR.
 
+TODO
 
-
-The core differences of HDR vs SDR:
-- color space is usually BT2020 - it can represent more colors (ignoring the brightness)
-
-Have you ever seen "RGB" a color represented as 3 values from 0 to 255? That's SDR.
-
-The color and brightness in the majority of digital images and online content is encoded this way.
-0-255 are integer values that you can store in 1 byte (8 bits).
-So to store an uncompressed RGB color of one pixel you need 3 bytes.
-
-E.g. (R=255, G=0, B=0) is "red" color at "max brightness" (more on that below).
-
-## What is "red" in the example above?
-To properly explain it we'll dive into Color Spaces below.
-But in general, that means a specific "red" - the one from rec709 / sRGB color space
-Usually, sRGB color space is assumed
-But in a nutshell, in the majority of cases that'll mean a specific "red" 
-
-## What is "max brightness" in the example above?
-
-That's where the casual knowledge usually end, and it's enough for a ton of applications.
-For example, when creating a web page, you pick colors from 
-What is "red" actually?
-Think .jpg or .png.
-Usually
+To cover: color space bt 2020 - MINOR kind of. More range - for luminance mostly.
+HDR capture, HDR display, HDR representations (PQ is what is "on the wire", but it's quantized).
+The problem with absolute values - doesn't make sense in a bright room, at all! So HDR is kind of stupid for being absolute (in movies).
+In games, you could usually tweak the formula for transfer function (describe how a game image rendered using float absolute values gets converted to PQ in shaders using tone mapping). But devs don't know how to do it well so hence RenoDX / Luma etc.
+Make it all visual - but referenced in numbers. How the same exact thing can be displayed in mutiple manners. Include some AVIF (or whatever is supported) pictures to compare.
