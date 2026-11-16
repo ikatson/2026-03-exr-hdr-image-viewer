@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is HDR, Really?</title>
+<meta name="description" content="An interactive explainer of HDR: pixels as numbers, color spaces, gamma, quantization, SDR, nits, PQ, tone mapping, and why HDR is so confusing.">
+<style>
+:root {
+  --bg: #fbfaf7;
+  --fg: #1d1c1a;
+  --muted: #6b675f;
+  --rule: #e4e0d7;
+  --card: #f2efe8;
+  --card-2: #e9e5dc;
+  --accent: #c2410c;
+  --accent-soft: #fde7d9;
+  --link: #9a3412;
+  --c1: #c2410c;
+  --c2: #2563eb;
+  --c3: #15803d;
+  --c4: #7c3aed;
+  --code-bg: #efebe3;
+  --demo-surround: #808080;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161514;
+    --fg: #ebe8e2;
+    --muted: #a39e94;
+    --rule: #2f2d2a;
+    --card: #201f1d;
+    --card-2: #2a2826;
+    --accent: #fb923c;
+    --accent-soft: #3a2416;
+    --link: #fdba74;
+    --c1: #fb923c;
+    --c2: #60a5fa;
+    --c3: #4ade80;
+    --c4: #c084fc;
+    --code-bg: #262422;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161514; --fg: #ebe8e2; --muted: #a39e94; --rule: #2f2d2a; --card: #201f1d; --card-2: #2a2826;
+  --accent: #fb923c; --accent-soft: #3a2416; --link: #fdba74; --c1: #fb923c; --c2: #60a5fa; --c3: #4ade80; --c4: #c084fc;
+  --code-bg: #262422; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 19px/1.65 Charter, "Bitstream Charter", "Iowan Old Style", "Sitka Text", Cambria, Georgia, serif;
+}
+.sans, h1, h2, h3, .demo, .kicker, nav, figcaption, table, .callout-title, details summary, .badge, footer {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+main { max-width: 720px; margin: 0 auto; padding: 0 16px 96px; }
+
+header.hero { padding: 72px 0 24px; }
+.kicker { text-transform: uppercase; letter-spacing: .12em; font-size: 13px; color: var(--accent); font-weight: 700; }
+h1 { font-size: clamp(36px, 7vw, 58px); line-height: 1.05; margin: 12px 0 18px; letter-spacing: -0.02em; }
+.dek { font-size: 22px; color: var(--muted); margin: 0; }
+h2 { font-size: 30px; line-height: 1.2; margin: 72px 0 8px; letter-spacing: -0.01em; }
+h2 .num { color: var(--accent); font-weight: 600; margin-right: .35em; }
+h3 { font-size: 21px; margin: 40px 0 6px; }
+p { margin: 0 0 1.1em; }
+a { color: var(--link); text-underline-offset: 2px; }
+code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .86em; }
+code { background: var(--code-bg); padding: .08em .35em; border-radius: 4px; }
+strong { font-weight: 700; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 48px 0; }
+nav.toc { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 16px 0; margin: 24px 0 8px; font-size: 15px; }
+nav.toc ol { margin: 0; padding-left: 1.4em; columns: 2; column-gap: 32px; }
+nav.toc li { margin: 2px 0; break-inside: avoid; }
+@media (max-width: 560px) { nav.toc ol { columns: 1; } }
+.callout { background: var(--card); border-left: 3px solid var(--accent); padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 24px 0; }
+.callout p:last-child { margin-bottom: 0; }
+.callout-title { font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin-bottom: 4px; }
+details.nerd { background: var(--card); border-radius: 8px; padding: 10px 18px; margin: 20px 0; }
+details.nerd summary { cursor: pointer; font-weight: 600; font-size: 15px; color: var(--muted); }
+details.nerd[open] summary { margin-bottom: 8px; }
+details.nerd p:last-child { margin-bottom: 4px; }
+blockquote { margin: 24px 0; padding: 4px 0 4px 20px; border-left: 3px solid var(--rule); color: var(--muted); font-style: italic; }
+
+/* demos */
+.demo { background: var(--card); border-radius: 12px; padding: 18px; margin: 28px 0; font-size: 15px; line-height: 1.45; }
+.demo-title { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
+.demo-title::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.demo canvas { display: block; max-width: 100%; }
+.demo .controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin: 12px 0 4px; }
+.demo label { flex-wrap: wrap; max-width: 100%; display: inline-flex; align-items: center; gap: 8px; }
+.demo input[type=range] { width: 180px; max-width: 45vw; accent-color: var(--accent); }
+.demo input[type=number] { width: 70px; font: inherit; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.demo select { max-width: 100%; font: inherit; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--bg); flex-wrap: wrap; }
+.seg button { font: inherit; font-size: 14px; border: 0; background: transparent; color: var(--fg); padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button.on { background: var(--accent); color: #fff; }
+.readout { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
+.val { font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; min-width: 4.5em; display: inline-block; }
+.cap { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+.ramp-label { font-size: 13px; color: var(--muted); margin: 14px 0 4px; display: flex; justify-content: space-between; gap: 8px; }
+.ramp-label b { color: var(--fg); font-weight: 600; }
+.ramp { width: 100%; height: 64px; border-radius: 4px; image-rendering: pixelated; }
+.ticks { width: 100%; height: 18px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 640px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0; }
+th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.table-scroll { overflow-x: auto; }
+figure { margin: 28px 0; }
+figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+.swatch { border-radius: 8px; border: 1px solid rgba(0,0,0,.12); }
+.badge { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; padding: 6px 12px; border-radius: 999px; background: var(--card-2); }
+.badge .dot { width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; }
+.badge.yes .dot { background: #16a34a; }
+.badge.no .dot { background: #d97706; }
+.pipeline { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; margin: 12px 0; }
+.pipeline .step { flex: 1 1 130px; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; font-size: 13.5px; }
+.pipeline .step b { display: block; font-size: 14px; margin-bottom: 2px; }
+.pipeline .step.warn { border-color: var(--accent); background: var(--accent-soft); }
+.pipeline .arrow { align-self: center; color: var(--muted); font-size: 18px; }
+@media (max-width: 640px) { .pipeline .arrow { display: none; } }
+.stack-imgs { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.stack-imgs figure { margin: 0; }
+.stack-imgs img, .stack-imgs canvas { width: 100%; height: auto; border-radius: 6px; display: block; }
+.tm-wrap { position: relative; }
+.tm-wrap canvas#tm-canvas { width: 100%; height: auto; border-radius: 6px; cursor: crosshair; }
+.tm-hover { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.72); color: #fff; padding: 4px 8px; border-radius: 6px; font: 12px ui-monospace, Menlo, monospace; pointer-events: none; display: none; }
+.room { border-radius: 10px; padding: 36px; transition: background .2s; display: flex; justify-content: center; }
+.room .tv { background: #050505; padding: 10px; border-radius: 6px; width: min(460px, 100%); box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+.room .tv canvas { width: 100%; height: auto; display: block; }
+.cie-wrap { display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 20px; align-items: start; }
+@media (max-width: 720px) { .cie-wrap { grid-template-columns: 1fr; } }
+.legend { display: flex; flex-direction: column; gap: 8px; }
+.legend label { gap: 10px; }
+.legend .sw { width: 22px; height: 3px; display: inline-block; border-radius: 2px; }
+.check-row { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+.check-row > div { flex: 1 1 140px; text-align: center; }
+.check-row canvas, .check-row .patch { width: 100%; height: 120px; border-radius: 6px; display: block; }
+.summary-list li { margin-bottom: .5em; }
+footer { color: var(--muted); font-size: 14px; border-top: 1px solid var(--rule); padding-top: 18px; margin-top: 64px; }
+svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif; }
+main .wide { width: min(980px, calc(100vw - 32px)); margin-left: 50%; margin-right: 0; transform: translateX(-50%); }
+.theme-toggle { position: absolute; right: 14px; top: 12px; z-index: 5; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="theme-toggle seg sans" role="group" aria-label="Theme">
+  <button data-theme-btn="auto" class="on">Auto</button><button data-theme-btn="light">Light</button><button data-theme-btn="dark">Dark</button>
+</div>
+<main>
+<header class="hero">
+  <div class="kicker">An interactive explainer</div>
+  <h1>What is HDR, really?</h1>
+  <p class="dek">Your TV says HDR. Your phone camera says HDR. Your game has an HDR toggle that makes everything look washed out. Let’s figure out what is actually going on, starting from a single pixel.</p>
+  <p class="sans" style="margin-top:20px"><span id="hdr-badge" class="badge"><span class="dot"></span><span>Checking your screen…</span></span></p>
+</header>
+
+<p>“HDR” is one of the most confusing terms in consumer tech, and not because the idea is hard. It’s confusing because the same three letters get stamped on at least four different things:</p>
+<ol>
+  <li><strong>The “HDR” photo mode</strong> on phones from around 2010, which merged several exposures into one perfectly ordinary image.</li>
+  <li><strong>Camera dynamic range</strong>, meaning how wide a span of light a sensor can record in one shot.</li>
+  <li><strong>HDR displays</strong>, which can get a lot brighter in small spots than normal screens.</li>
+  <li><strong>HDR signals and formats</strong> (HDR10, Dolby Vision, HLG), which are ways of writing pictures down as numbers.</li>
+</ol>
+<p>People mix these up all the time, and then argue past each other. To untangle them we need to build up from the basics: what the numbers in an image file mean, why they are squashed the way they are, and what “brightness” even is. Every section has something to poke at. It’s worth poking.</p>
+
+<nav class="toc">
+<ol>
+  <li><a href="#rgb">Colors are just numbers</a></li>
+  <li><a href="#colorspace">Numbers need a meaning</a></li>
+  <li><a href="#linear">Light adds up linearly</a></li>
+  <li><a href="#quant">Squeezing light into 256 steps</a></li>
+  <li><a href="#sdr">SDR, precisely</a></li>
+  <li><a href="#nits">How bright is bright?</a></li>
+  <li><a href="#hdr">So what is HDR?</a></li>
+  <li><a href="#absolute">The trouble with absolute brightness</a></li>
+  <li><a href="#tonemap">Tone mapping</a></li>
+  <li><a href="#games">Why HDR in games is often bad</a></li>
+  <li><a href="#tldr">The cheat sheet</a></li>
+</ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="rgb"><span class="num">1</span>Colors are just numbers</h2>
+<p>A digital image is a grid of pixels, and each pixel is usually stored as three numbers: how much <strong>red</strong>, how much <strong>green</strong> and how much <strong>blue</strong>. These are called <em>channels</em>. In a typical image file each channel gets one byte, so it’s a whole number from 0 to 255.</p>
+
+<div class="demo">
+  <div class="demo-title">Mix a color</div>
+  <div class="grid2">
+    <div>
+      <div class="controls" style="flex-direction:column;align-items:flex-start;margin-top:0">
+        <label>R <input type="range" id="mix-r" min="0" max="255" value="255"><span class="val" id="mix-r-v"></span></label>
+        <label>G <input type="range" id="mix-g" min="0" max="255" value="186"><span class="val" id="mix-g-v"></span></label>
+        <label>B <input type="range" id="mix-b" min="0" max="255" value="120"><span class="val" id="mix-b-v"></span></label>
+      </div>
+      <p class="readout" id="mix-readout" style="margin-top:10px"></p>
+    </div>
+    <div id="mix-swatch" class="swatch" style="min-height:140px"></div>
+  </div>
+</div>
+
+<p>That part is easy. The hard part, and the rest of this article, is the question nobody asks: <em>what do those numbers actually mean?</em> What real-world color is “255 red”? How bright is it? The file doesn’t say. Hold that thought.</p>
+
+<details class="nerd">
+  <summary>Aside: video isn’t stored as RGB (and why that’s fine)</summary>
+  <p>Movies and TV usually store pixels as <strong>Y′CbCr</strong> (often loosely called YUV): one number for brightness (<em>luma</em>, Y′) and two for color difference (Cb and Cr). Converting between RGB and Y′CbCr is a simple matrix multiplication, so in theory nothing is lost.</p>
+  <p>Two reasons it exists. Historically, TV started black-and-white (just Y), and color was bolted on later as two extra signals old sets could ignore. Practically, our eyes are much sharper at brightness than color, so video stores Cb and Cr at lower resolution and saves a lot of bandwidth (that’s “4:2:0 chroma subsampling”). Click through the channels below to see how much detail lives in Y′ versus the other two.</p>
+  <div class="demo" style="margin:12px 0 6px">
+    <div class="seg" id="ycc-seg">
+      <button data-ch="rgb" class="on">RGB</button><button data-ch="r">R</button><button data-ch="g">G</button><button data-ch="b">B</button><button data-ch="y">Y′</button><button data-ch="cb">Cb</button><button data-ch="cr">Cr</button>
+    </div>
+    <canvas id="ycc-canvas" width="480" height="270" style="width:100%;height:auto;margin-top:12px;border-radius:6px"></canvas>
+  </div>
+  <p>For the rest of this article, just assume you can always convert to RGB and back.</p>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="colorspace"><span class="num">2</span>Numbers need a meaning: color spaces</h2>
+<p>A <strong>color space</strong> is the rulebook that turns numbers into real-world colors. “Real-world color” here means something physical: a particular mix of light wavelengths hitting your eye.</p>
+<p>The anchor for all of this is a reference space from 1931 called <strong>CIE XYZ</strong>, built from experiments on how people actually match colors. Any color a human can see has XYZ coordinates. Every other color space is defined by how it relates to XYZ, and it needs three ingredients:</p>
+<ol>
+  <li><strong>Primaries.</strong> Which exact red, green and blue does “full red”, “full green” and “full blue” mean, given as XYZ coordinates.</li>
+  <li><strong>White point.</strong> Which exact color you get when all three are equal.</li>
+  <li><strong>Transfer function.</strong> How the stored numbers relate to the amount of light. This one is the star of the show, so it gets its own sections below.</li>
+</ol>
+
+<h3>Primaries: how wide the paint box is</h3>
+<p>The horseshoe below is every color a human can see, flattened onto two dimensions (brightness removed). A color space can only produce colors inside the triangle formed by its three primaries. The triangle is called the <em>gamut</em>.</p>
+
+<div class="demo wide">
+  <div class="demo-title">The CIE 1931 chromaticity diagram</div>
+  <div class="cie-wrap">
+    <canvas id="cie" width="420" height="440" style="width:100%;height:auto"></canvas>
+    <div>
+      <div class="legend">
+        <label><input type="checkbox" data-gamut="srgb" checked><span class="sw" style="background:var(--fg)"></span><span><b>sRGB / Rec.709</b> (the web, SDR video)</span></label>
+        <label><input type="checkbox" data-gamut="p3" checked><span class="sw" style="background:var(--c2)"></span><span><b>Display P3</b> (iPhones, Macs, many new screens)</span></label>
+        <label><input type="checkbox" data-gamut="bt2020" checked><span class="sw" style="background:var(--c1)"></span><span><b>Rec.2020</b> (the container HDR video uses)</span></label>
+      </div>
+      <p class="cap" style="margin-top:14px">The colors inside the horseshoe are only a hint: your screen can’t show most of them, which is the point. The dot is D65, the white all three share. HDR video uses the big Rec.2020 triangle, though real content rarely goes beyond P3.</p>
+    </div>
+  </div>
+</div>
+
+<h3>White point: what “white” means is a choice</h3>
+<p>The “warm” and “cool” settings on a monitor, or white balance on a camera, move the white point. Candlelight and noon sun are both “white” to a brain that has adjusted to them, so a color space has to pin it down. sRGB uses <strong>D65</strong>, roughly average daylight.</p>
+
+<div class="callout">
+  <div class="callout-title">The convention that holds the web together</div>
+  <p>If an image file doesn’t say what color space it’s in, everyone assumes <strong>sRGB</strong>. Without that agreement, the numbers in a JPEG would mean nothing at all.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="linear"><span class="num">3</span>Light adds up linearly</h2>
+<p>XYZ is a <strong>linear</strong> space: the numbers are proportional to the actual amount of light. Double the numbers and you get the same color with twice the light coming off the surface. Mix two lights and you just add the numbers. This is how physics works, so 3D renderers, cameras and compositing tools all do their math in linear values.</p>
+<p>The catch is that the pixel values in an ordinary image are <em>not</em> linear. Here’s a quick way to see it.</p>
+
+<div class="demo">
+  <div class="demo-title">Squint test: which gray is half the light?</div>
+  <div class="check-row">
+    <div><canvas id="stripes"></canvas><div class="cap">Thin black and white lines.<br>Exactly 50% of the light.</div></div>
+    <div><div class="patch" style="background:rgb(128,128,128)"></div><div class="cap">Pixel value 128<br>(the “middle” number)</div></div>
+    <div><div class="patch" style="background:rgb(188,188,188)"></div><div class="cap">Pixel value 188</div></div>
+  </div>
+  <p class="cap">Step back or squint until the lines blur. On a normal screen, the stripes match <strong>188</strong>, not 128. Half the light is stored as 188 out of 255. (If your browser is zoomed, the lines may smear and the test won’t work. Reset zoom to 100%.)</p>
+</div>
+
+<p>So the number 128 is not “half as bright” as 255. It’s about a fifth of the light. Why on earth would anyone store images that way? Because of the most important trick in this whole story.</p>
+
+<!-- ============================================================ -->
+<h2 id="quant"><span class="num">4</span>Squeezing light into 256 steps</h2>
+<p>In principle, a channel value is a real number with infinitely many possible values between 0 and 1. A computer can’t store infinity, so we have to round to a limited set of steps. This is called <strong>quantization</strong>. With one byte per channel, you get 256 steps.</p>
+<p>The obvious approach is to slice the range from black to white into 256 equal pieces of <em>light</em>. Code 1 means 1/255 of full brightness, code 2 means 2/255, and so on. Let’s try it.</p>
+
+<div class="demo wide">
+  <div class="demo-title">Quantization lab</div>
+  <div class="controls">
+    <span class="seg" id="q-enc"><button data-enc="gamma" class="on">Gamma-encoded (what images do)</button><button data-enc="linear">Equal steps of light (naive)</button></span>
+    <label>Bits per channel <input type="range" id="q-bits" min="1" max="8" value="8"><span class="val" id="q-bits-v"></span></label>
+    <label><input type="checkbox" id="q-zoom"> Zoom into the darkest 25%</label>
+  </div>
+  <div class="ramp-label"><span><b>Smooth reference</b> (what we want to show)</span></div>
+  <canvas class="ramp" id="q-ref"></canvas>
+  <div class="ramp-label"><span><b id="q-title">After quantization</b></span><span id="q-stats"></span></div>
+  <canvas class="ramp" id="q-out"></canvas>
+  <canvas class="ticks" id="q-ticks" style="height:24px"></canvas>
+  <p class="cap">The strip under the ramp marks where each stored value starts and ends, with its number when there’s room. Try “Equal steps of light” at 8 bits and zoom into the darks: the shadows break into bands. Then switch to gamma and drop to 5 or 6 bits: the steps stay evenly spaced to your eye.</p>
+</div>
+
+<p>The problem is that <strong>your eyes are not linear</strong>. Going from 1% to 2% of the light is a huge visible jump; going from 98% to 99% is invisible. Here is a ramp of evenly spaced <em>light</em>, the physically “honest” gradient:</p>
+
+<div class="demo">
+  <div class="demo-title">Equal amounts of light, left to right</div>
+  <canvas class="ramp" id="lin-light"></canvas>
+  <p class="cap">The middle of this strip is 50% of the light, and it already looks like a light gray. Almost all the visible “darkness” is crammed into the left fifth.</p>
+</div>
+
+<h3>The fix: a transfer function</h3>
+<p>So instead of storing light directly, we first run it through a curve that gives more of the steps to the darks, then round. The display runs the inverse curve to turn numbers back into light. This is the <strong>transfer function</strong>, the third ingredient of a color space. Values before it are <strong>linear</strong> (proportional to light), values after it are <strong>encoded</strong>. The light-to-numbers curve is called the <strong>OETF</strong>, and the numbers-to-light curve your display applies is the <strong>EOTF</strong>; roughly, one is the inverse of the other.</p>
+<p>The classic transfer function is a <strong>gamma</strong> curve: a simple power. To encode, raise the linear value to the power 1/2.2. To decode, raise it to 2.2. Our 50% light becomes 0.5<sup>1/2.2</sup> ≈ 0.73, and 0.73 × 255 ≈ <strong>186</strong>. (Close to the 188 from the stripe test. The real sRGB curve is a slightly different shape, which is where the extra 2 comes from.)</p>
+
+<div class="demo">
+  <div class="demo-title">What each stored number means</div>
+  <div class="grid2" style="align-items:center">
+    <svg id="tf-plot" viewBox="0 0 320 260" style="width:100%;height:auto"></svg>
+    <div class="table-scroll"><table id="code-table"></table></div>
+  </div>
+  <p class="cap">With equal steps of light, the smallest non-zero value you can store is 1/255 ≈ 0.4% of full brightness, a clearly visible step up from black. With gamma 2.2 it’s about 0.0005%. That’s how 8 bits manage to look smooth.</p>
+</div>
+
+<details class="nerd">
+  <summary>Why “gamma”, and is it a coincidence that it matches the eye?</summary>
+  <p>Old CRT tubes happened to have a power-law response to voltage, roughly gamma 2.2 to 2.5. So TV signals were pre-corrected with the inverse curve at the camera. It was a lucky accident that this curve is also close to how our eyes perceive brightness, so the same encoding that made CRTs work also made the best use of limited bits. CRTs are gone, but the curve stayed because of that second property.</p>
+  <p>The precise sRGB curve is a small straight segment near black stitched onto a 2.4 power, which works out close to an overall 2.2. Whether a display should decode sRGB images with that piecewise curve or a pure 2.2 power is still argued about, and the difference matters in the darkest shades. It will come back to bite us in the games section.</p>
+</details>
+
+<!-- ============================================================ -->
+<h2 id="sdr"><span class="num">5</span>SDR, precisely</h2>
+<p>To understand HDR, it’s easiest to compare it with what came before, now retroactively named <strong>SDR</strong> (standard dynamic range). Everything you’ve seen on the web, most photos, and broadcast TV is SDR. Concretely, SDR means:</p>
+<ul>
+  <li><strong>Color space:</strong> sRGB for images and games, Rec.709 for video. Same primaries and white point, slightly different transfer functions (about gamma 2.2 for sRGB, gamma 2.4 for how Rec.709 video is displayed).</li>
+  <li><strong>8 bits per channel</strong> in most files and video streams.</li>
+  <li><strong>Relative brightness.</strong> 1.0 (255) means “as bright as this display’s white”. Nothing more specific than that.</li>
+</ul>
+<p>That last point is key. An SDR file never says how bright anything is in absolute terms. White on your phone outdoors in the sun might be well over 1,000&nbsp;nits (we’ll define nits in a moment). White on your laptop in bed at night might be 50. Both are “correct”, and you pick between them with the brightness slider. SDR has <strong>no maximum brightness</strong>: it scales to whatever the screen does.</p>
+
+<div class="callout">
+  <div class="callout-title">Myth: “SDR is 100 nits”</div>
+  <p>You will read this everywhere, often as an argument for why HDR is needed. It comes from <em>reference viewing conditions</em>: the standards for grading SDR video in a dim studio (ITU-R BT.1886 and BT.2035) assume a monitor whose white is 100&nbsp;nits, and the sRGB standard even assumes 80. Those numbers describe how the colorist’s room was set up, so that two studios see the same thing. They are not a property of the SDR signal, and no SDR screen is limited to them: white is simply as bright as you set it. Spec sheets for ordinary monitors and laptops typically list a maximum of a few hundred nits, and phones advertise well over a thousand in sunlight.</p>
+</div>
+
+<div class="demo">
+  <div class="demo-title">Decode a pixel</div>
+  <p style="margin-top:0">Let’s follow one pixel from a random image on the web all the way to light. No color space in the file, so it’s sRGB by convention.</p>
+  <div class="controls">
+    <span class="seg" id="px-preset"><button data-px="186,186,186" class="on">Mid gray 186</button><button data-px="225,170,140">Skin tone</button><button data-px="110,165,230">Sky blue</button><button data-px="40,40,40">Dark gray 40</button></span>
+  </div>
+  <div class="controls">
+    <label>R <input type="number" id="px-r" min="0" max="255" value="186"></label>
+    <label>G <input type="number" id="px-g" min="0" max="255" value="186"></label>
+    <label>B <input type="number" id="px-b" min="0" max="255" value="186"></label>
+    <label>Your screen’s white <select id="px-white"><option value="50">50 nits (dim, at night)</option><option value="200" selected>200 nits</option><option value="500">500 nits</option><option value="1200">1,200 nits (phone in sunlight)</option></select></label>
+    <span id="px-swatch" class="swatch" style="width:48px;height:32px;display:inline-block"></span>
+  </div>
+  <div class="table-scroll"><table id="px-table"></table></div>
+  <p class="cap" id="px-cap"></p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="nits"><span class="num">6</span>How bright is bright?</h2>
+<p>Brightness that you see coming off a surface or screen is measured in <strong>candelas per square meter</strong>, which everyone in the display world calls <strong>nits</strong>. The real world covers an absurd range of nits, much wider than any screen. Photographers measure range in <strong>stops</strong>: one stop is a doubling of light, ten stops is about 1,000×, twenty stops is about a million times.</p>
+
+<div class="demo wide">
+  <div class="demo-title">The brightness ladder (log scale: every gridline is 10× brighter)</div>
+  <svg id="ladder" viewBox="0 0 940 425" style="width:100%;height:auto"></svg>
+  <div class="controls">
+    <label>Camera <select id="cam-type">
+      <option value="10">Phone, one exposure (≈10 stops)</option>
+      <option value="14">Phone, multi-frame “HDR” merge (≈14 stops)</option>
+      <option value="12">Entry-level DSLR / mirrorless (≈12 stops)</option>
+      <option value="14.5" selected>High-end full-frame (≈14.5 stops)</option>
+      <option value="17">Cinema camera (≈17 stops)</option>
+    </select></label>
+    <label>Exposure <input type="range" id="cam-exp" min="0" max="100" value="50"></label>
+  </div>
+  <p class="cap">Real-world values and camera figures are rough. The top half is <em>scene</em> light, what a camera looks at. The camera’s window is a fixed <em>ratio</em>, and the exposure setting slides it anywhere along the scale, including over the sun. The bottom half is <em>emitted</em> light: each dot is roughly the most a kind of screen can put out (it can always go dimmer). Try sliding the camera window: you can’t make a screen’s peak move.</p>
+</div>
+
+<h3>Three things that get called “dynamic range”</h3>
+<p>A typical argument you’ll find in any online thread about HDR goes: <em>“My camera shot 14-bit raw files with 13.5 stops of dynamic range back in 2012. That’s somewhere between DisplayHDR 600 and 1000, which is plenty HDR.”</em> It sounds knowledgeable, and it mixes up two different kinds of number:</p>
+<ul>
+  <li><strong>Camera dynamic range</strong> is a <em>ratio</em>: brightest versus darkest in one shot (13.5 stops ≈ 11,600 : 1). It says nothing about absolute brightness: with a short enough exposure even a cheap phone records the sun’s disk, around 1.6 <em>billion</em> nits, without clipping.</li>
+  <li><strong>Display HDR ratings</strong> like VESA DisplayHDR 600 or 1000 are mainly about <em>peak brightness in nits</em>: how much light the screen can actually emit, in absolute terms.</li>
+  <li><strong>HDR signal formats</strong> are about how brightness is <em>written down</em>: which numbers mean which nits, and with how much precision.</li>
+</ul>
+<p>You also can’t compare a camera’s stops with a screen’s contrast ratio. A screen’s darkest black depends mostly on your room: an OLED emits essentially zero light for black, so its “contrast ratio” is infinite on paper, and in a lit room what you actually see as black is the room reflecting off the glass. That’s why the ladder doesn’t draw screens as ranges at all.</p>
+<p>Cameras have recorded wide ranges of light for decades. What was missing was a <em>display</em> able to emit bright highlights and a <em>format</em> to carry them. That’s the HDR in “HDR TV”.</p>
+
+<!-- ============================================================ -->
+<h2 id="hdr"><span class="num">7</span>So what is HDR?</h2>
+<p>Finally we have all the pieces. If you want the whole thing in one sentence, here it is:</p>
+<div class="callout">
+  <div class="callout-title">HDR in one sentence</div>
+  <p style="font-size:1.15em"><strong>HDR is for bright highlights.</strong> That’s nearly all of its visible effect.</p>
+</div>
+<p>That sounds ridiculous for something marketed this hard, but it isn’t. Light sources and reflections of them appear in almost every shot: lamps, windows, the sun on water, chrome, neon, candles, car headlights. In SDR, all of them are flattened into the same white as a white shirt. With HDR they can be several times brighter than everything around them, the way they are in real life, and that contrast is what makes a picture look alive rather than printed. Faces, walls and skies stay roughly where they were.</p>
+
+<div class="demo wide">
+  <div class="demo-title">Same photo, with and without highlight headroom</div>
+  <div class="controls" style="margin-top:0">
+    <span class="seg" id="desk-mode"><button data-mode="sim" class="on">Simulated (works on any screen)</button><button data-mode="real">Real HDR (needs an HDR screen)</button></span>
+  </div>
+  <div class="grid2" id="desk-sim" style="margin-top:12px">
+    <figure style="margin:0"><img alt="Stained glass window, SDR rendering, dimmed" src="data:image/jpeg;base64,__DESK_SIM_SDR__" style="width:100%;height:auto;border-radius:6px;display:block"><figcaption><b>SDR.</b> The window is squeezed into the same white as the book page.</figcaption></figure>
+    <figure style="margin:0"><img alt="Stained glass window, HDR rendering simulated with 4x headroom" src="data:image/jpeg;base64,__DESK_SIM_HDR__" style="width:100%;height:auto;border-radius:6px;display:block"><figcaption><b>HDR, 4× headroom.</b> The book and table are identical. Only the glass gets brighter, and its colors come back.</figcaption></figure>
+  </div>
+  <div class="grid2" id="desk-real" style="margin-top:12px;display:none">
+    <figure style="margin:0"><img alt="Stained glass window, SDR" src="data:image/jpeg;base64,__DESK_SDR__" style="width:100%;height:auto;border-radius:6px;display:block"><figcaption><b>SDR JPEG.</b></figcaption></figure>
+    <figure style="margin:0"><img alt="Stained glass window, HDR AVIF encoded with PQ" src="data:image/avif;base64,__DESK_AVIF__" style="width:100%;height:auto;border-radius:6px;display:block"><figcaption><b>HDR AVIF</b> (PQ, Rec.2020, 10-bit, peaks at about 1,000 nits).</figcaption></figure>
+  </div>
+  <p class="cap" id="desk-cap">To fake HDR on a normal screen, both images are dimmed to a quarter of the light, so your screen’s white can stand in for highlights four times brighter than the page. On a real HDR display you’d see the left image at full brightness and the window on the right glowing above it. The photo is a real high-dynamic-range capture (“Desk” from the OpenEXR sample images, © Industrial Light &amp; Magic, BSD licence).</p>
+</div>
+
+<h3>What actually changes compared with SDR</h3>
+<p>When a TV, a stream or a game says “HDR”, it almost always means a signal like HDR10 that differs from SDR in three ways:</p>
+<ol>
+  <li><strong>Absolute brightness, on a scale up to 10,000 nits.</strong> Instead of “1.0 = whatever your screen’s white is”, every number means a specific number of nits. This needs a new transfer function called <strong>PQ</strong> (Perceptual Quantizer, standardized as SMPTE ST&nbsp;2084).</li>
+  <li><strong>More bits:</strong> 10 or 12 per channel instead of 8.</li>
+  <li><strong>A wider color gamut:</strong> Rec.2020 primaries instead of Rec.709.</li>
+</ol>
+<p>Points 1 and 2 are really one feature. If you stretch the same number of steps over a 100× larger brightness range, each step gets 100× coarser and you get banding. More range <em>requires</em> more bits; the extra bits buy you nothing visible on their own. (A 10-bit SDR video is perfectly possible, and looks the same as an 8-bit one apart from slightly smoother gradients.)</p>
+
+<h3>The 10,000-nit myth</h3>
+<p>“HDR goes up to 10,000 nits” is technically true and practically meaningless. 10,000 is just where the PQ scale ends. Nobody masters there:</p>
+<ul>
+  <li>Films are graded on reference monitors that peak at 1,000 nits, or 4,000 for some Dolby Vision work.</li>
+  <li>Within that, most HDR movies are <strong>dark</strong>. They are graded for a dark room, so faces and walls typically sit at the same few tens of nits they would in SDR, and highlights often stop at a few hundred nits. Measurements of popular releases regularly find films that never go meaningfully above 200–600 nits anywhere, even though they were mastered on a 1,000-nit monitor.</li>
+  <li>The wide gamut is barely used either. Rec.2020 colors beyond P3 are so saturated that they look unnatural, so they mostly appear in things like a glowing lightsaber or a laser, if at all.</li>
+</ul>
+<p>So many “HDR” movies use neither the extra brightness nor the extra color, and you still pay the price covered in the next section: no control over how bright the picture is.</p>
+
+<h3>PQ: a transfer function shaped like your eye</h3>
+<p>Why a new curve? Stretch an SDR-style gamma curve from 0 to 10,000 nits and the darks fall apart: there aren’t enough steps at the bottom. PQ was designed by measuring how small a brightness difference people can detect at every brightness level, and then spacing the code values to match. Explore it:</p>
+
+<div class="demo wide">
+  <div class="demo-title">The PQ curve</div>
+  <div class="controls">
+    <label>10-bit code value <input type="range" id="pq-code" min="0" max="1023" value="520"><span class="val" id="pq-code-v"></span></label>
+    <span class="readout" id="pq-readout"></span>
+  </div>
+  <svg id="pq-plot" viewBox="0 0 900 300" style="width:100%;height:auto"></svg>
+  <p class="cap">Half of PQ’s code values cover just 0 to about 92 nits, which is where most of a typical movie actually lives. The upper half, from about 92 to 10,000 nits, is reserved for highlights, and most of it is rarely touched.</p>
+</div>
+
+<div class="callout">
+  <div class="callout-title">Another number to be careful with: 203 nits</div>
+  <p>You may see “HDR reference white is 203 nits”. That comes from ITU-R Report BT.2408, a set of <em>operational guidelines</em> for broadcasters: when you mix SDR graphics or SDR footage into a PQ broadcast, put SDR white at about 203 nits so it sits comfortably below the highlights. Software like libplacebo and the CSS HDR draft use it for the same job. It’s a convention for converting between formats, not a fact about paper or about SDR. On your own screen, the honest answer is the one Windows gives: in HDR mode there is simply a slider for how bright SDR content (which is everything that isn’t HDR) should be. That slider is your old brightness control, and you’d move it with the room lighting, exactly like TV brightness.</p>
+</div>
+
+<div class="demo wide">
+  <div class="demo-title">How many steps each brightness range gets</div>
+  <div class="table-scroll"><table id="pq-table"></table></div>
+  <svg id="step-plot" viewBox="0 0 900 320" style="width:100%;height:auto;margin-top:14px"></svg>
+  <p class="cap">Top: the number of distinct code values falling in each range. Bottom: how big each step is, as a percentage of the brightness at that point. Smaller is smoother, and steps under roughly 1% are generally invisible in midtones (the eye tolerates bigger jumps in deep shadow). The SDR row is drawn with its white at 100 nits only so it can share an axis; SDR is relative, so in reality the whole line slides left or right with your brightness setting.</p>
+</div>
+
+<h3>Does HDR show more detail near black?</h3>
+<p>The table suggests it might, since 10-bit PQ has far more code values below 1 nit than 8-bit SDR. In practice, mostly no. The extra precision exists to prevent banding once shadows are pinned to absolute nits (a 10-bit SDR file has fine steps too), and seeing differences around 0.01 nits takes an OLED in a dark room. In a normally lit room, light reflecting off the screen is easily a nit or more and buries all of it. The usual complaint about HDR movies is the opposite: crushed, murky shadows.</p>
+
+<h3>The HDR alphabet soup</h3>
+<ul>
+  <li><strong>HDR10</strong>: PQ + Rec.2020 + 10 bits, plus static metadata for the whole film. Every HDR TV supports it.</li>
+  <li><strong>Dolby Vision, HDR10+</strong>: the same, plus per-scene metadata telling the TV how to fit the picture to its own capabilities.</li>
+  <li><strong>HLG</strong> (broadcast) and <strong>gain-map photos</strong> (Apple, Google Ultra HDR, ISO 21496-1): <em>relative</em> HDR formats, closer to how SDR behaves.</li>
+  <li><strong>DisplayHDR 400/600/1000</strong>: a VESA monitor certification, mostly about peak brightness. Says nothing about the signal.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="absolute"><span class="num">8</span>The trouble with absolute brightness</h2>
+<p>PQ makes every code value mean a fixed number of nits. From a filmmaker’s point of view that’s great: if a face was 40 nits on the grading monitor, it will be 40 nits on your TV, so you see what they saw. No more viewers with the brightness cranked up ruining the mood of a night scene.</p>
+<p>The catch is that the grading room is a very particular place: dark, with a dim neutral wall behind the monitor. Your living room at 2&nbsp;pm is not. Your eyes adapt to the room, and light from the room reflects off the screen and lifts every dark part of the picture. A night scene graded for a dark room becomes a grey murk in daylight, and in “Filmmaker mode” or any accurate HDR mode, the TV’s brightness control isn’t allowed to fix it, because the signal already says exactly how bright each pixel must be.</p>
+
+<div class="demo">
+  <div class="demo-title">A night scene from a typical HDR movie, in different rooms</div>
+  <div class="room" id="room"><div class="tv"><canvas id="room-canvas" width="640" height="360"></canvas></div></div>
+  <div class="controls">
+    <span class="seg" id="room-mode"><button data-mode="hdr" class="on">HDR, accurate mode (absolute)</button><button data-mode="sdr">SDR (relative)</button></span>
+  </div>
+  <div class="controls">
+    <label>Room lighting <input type="range" id="room-light" min="0" max="100" value="5"><span class="val" id="room-light-v" style="min-width:8em"></span></label>
+    <label>TV brightness <input type="range" id="room-bright" min="0" max="100" value="0"><span class="val" id="room-bright-v"></span></label>
+  </div>
+  <p class="cap" id="room-cap"></p>
+</div>
+
+<p>Filmmaker mode is still the mode you want: it shows the film as graded, without the boosted colors, sharpening and motion smoothing that TV makers add in their other modes. It keeps PQ absolute, and that’s exactly why it has nothing to offer you in a bright room. The other picture modes (“bright room” presets, ambient light sensors, Dolby Vision IQ, brightness boosts) do bend PQ back into something relative, but they bring all that processing along with them.</p>
+<p>Computers face a related question: where to put ordinary SDR content inside the HDR range.</p>
+<ul>
+  <li><strong>Windows</strong> gives you an “SDR content brightness” slider: how bright SDR white is once HDR mode is on. It’s effectively a brightness control, which is the right idea.</li>
+  <li><strong>macOS and iOS</strong> keep everything relative. SDR white sits wherever your brightness slider says, and HDR content gets “headroom” above it: how many times brighter than SDR white the screen can currently go. Turn your brightness down and the headroom grows; in full sunlight it may shrink to almost nothing.</li>
+</ul>
+<p>Absolute brightness is a good way to <em>describe</em> a master and a strange way to <em>watch</em> one. HDR as it ships for movies is, bluntly, a bit of a mess: the headline features go mostly unused, and the one control everyone needs is taken away.</p>
+
+<!-- ============================================================ -->
+<h2 id="tonemap"><span class="num">9</span>Tone mapping: fitting the world into a screen</h2>
+<p>The real world has a billion-nit sun and a ten-nit corner of your room in the same view. Even the best consumer screens peak at a few thousand nits, most at a few hundred to a thousand. Something has to squeeze the scene into what the display can do. That something is a <strong>tone mapper</strong>: a curve that keeps midtones roughly where they are and gently compresses highlights instead of chopping them off.</p>
+<p>Tone mapping happens everywhere. Your phone does it for every photo. A film colorist does it by hand. A game does it every frame. An HDR TV does it again if the movie was mastered brighter than the TV can go. Below is a synthetic scene stored in real physical units (nits): a dim room with a 24,000-nit light bulb, a sunlit window and a 400,000-nit sun. Pick a display and a tone mapper.</p>
+
+<div class="demo wide">
+  <div class="demo-title">Tone mapping playground</div>
+  <div class="tm-wrap"><canvas id="tm-canvas" width="960" height="540"></canvas><div class="tm-hover" id="tm-hover"></div></div>
+  <div class="controls">
+    <span class="seg" id="tm-op"><button data-op="clip">No tone mapping (clip)</button><button data-op="reinhard">Reinhard</button><button data-op="filmic" class="on">Filmic</button><button data-op="bad">Game set to 4,000 nits</button></span>
+  </div>
+  <div class="controls">
+    <label>Display peak <select id="tm-peak"><option value="100">100 nits (dim SDR screen)</option><option value="400">400 nits (DisplayHDR 400)</option><option value="1000" selected>1,000 nits (good HDR TV)</option><option value="4000">4,000 nits (mastering monitor)</option></select></label>
+    <label>Exposure <input type="range" id="tm-exp" min="-6" max="4" step="0.25" value="0"><span class="val" id="tm-exp-v"></span></label>
+    <label><input type="checkbox" id="tm-clipmark"> Highlight clipped pixels</label>
+  </div>
+  <svg id="tm-curve" viewBox="0 0 900 230" style="width:100%;height:auto;margin-top:6px"></svg>
+  <p class="cap">Hover the picture to read real values. Since your screen may not be HDR, the preview scales the chosen display’s peak to your screen’s white. That’s why the 1,000-nit preview looks darker overall: the room is drawn at its true share of a 1,000-nit display, with the highlights getting the rest. On a real HDR display the room would look normal and the window would glow.</p>
+</div>
+
+<p>Things to try: <strong>clip</strong> on a 100-nit display turns the window into a white hole. <strong>Filmic</strong> brings the sky back. Then pick <strong>“Game set to 4,000 nits”</strong> on a 400-nit display: the game tone maps for a screen that doesn’t exist, the TV clips, and the highlights blow out again.</p>
+
+<!-- ============================================================ -->
+<h2 id="games"><span class="num">10</span>Why HDR in games is often bad</h2>
+<p>Games are in a better position than movies. A movie is mastered once, in a grading suite, and then your TV guesses how to fit it. A game renders every frame from scratch, internally in floating-point linear light with no upper limit, much like the scene above. It could tone map precisely for <em>your</em> display. Here’s the pipeline:</p>
+
+<div class="demo">
+  <div class="demo-title">A game’s HDR pipeline</div>
+  <div class="pipeline">
+    <div class="step"><b>Render</b>Lighting in linear floats, physical-ish units, no ceiling</div>
+    <div class="arrow">→</div>
+    <div class="step warn"><b>Tone map</b>Compress to the display’s peak. Needs to know that peak!</div>
+    <div class="arrow">→</div>
+    <div class="step warn"><b>UI on top</b>Menus and HUD at a sane “paper white”, e.g. 200 nits</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>Encode</b>Rec.2020 + PQ, 10 bits</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>Display</b>TV decodes PQ, maybe tone maps again</div>
+  </div>
+</div>
+
+<p>Each orange step is a classic place to go wrong:</p>
+<ul>
+  <li><strong>Wrong peak.</strong> The game assumes 1,000 or 10,000 nits regardless of your screen, or the calibration slider doesn’t actually change the tone mapper. Highlights then clip on the TV, as in the playground above.</li>
+  <li><strong>The SDR look was never tone mapped for HDR.</strong> Many games are graded in SDR and HDR is an afterthought: the SDR tone mapper is reused and the result is scaled up. You get a picture that’s brighter but no more dynamic.</li>
+  <li><strong>Raised, grey blacks.</strong> A subtle one. SDR content was made on displays that behave like gamma 2.2. Many engines convert it to linear with the piecewise sRGB formula instead, which makes the darkest shades noticeably brighter, so night scenes look foggy and washed out in HDR mode but fine in SDR.</li>
+</ul>
+
+<div class="demo">
+  <div class="demo-title">Raised blacks from a curve mismatch (darkest 15% of the range)</div>
+  <div class="ramp-label"><span><b>Decoded with gamma 2.2</b> (what the artist saw)</span></div>
+  <canvas class="ramp" id="rb-a" style="height:48px"></canvas>
+  <div class="ramp-label"><span><b>Decoded with piecewise sRGB</b> (what many HDR modes do)</span></div>
+  <canvas class="ramp" id="rb-b" style="height:48px"></canvas>
+  <p class="cap" id="rb-cap"></p>
+</div>
+
+<p>Because the game has all the data, these mistakes are fixable after the fact. A small community of modders does exactly that: projects like <strong>RenoDX</strong> and <strong>Luma</strong> hook into games’ shaders and replace the tone mapping and output stages with properly calibrated ones (and tools like Special K add HDR to games that never had it). That they need to exist says a lot about how hard HDR is to get right, even for professionals.</p>
+
+<!-- ============================================================ -->
+<h2 id="tldr"><span class="num">11</span>The cheat sheet</h2>
+<ul class="summary-list">
+  <li><strong>Pixels are numbers.</strong> A color space (primaries, white point, transfer function) gives them meaning. Untagged images are sRGB.</li>
+  <li><strong>Light is linear, perception isn’t.</strong> Stored values are bent by a transfer function so that limited bits are spent where the eye can see differences.</li>
+  <li><strong>SDR</strong> = sRGB/Rec.709, about gamma 2.2–2.4, 8 bits, and <em>relative</em>: 1.0 means “your screen’s white”. It has no maximum; “SDR is 100 nits” describes a grading room, not SDR.</li>
+  <li><strong>HDR is for bright highlights.</strong> HDR10 adds PQ (absolute nits on a scale to 10,000), 10+ bits (needed for the range, not a feature on its own) and a Rec.2020 container. Real movies use a fraction of the range and almost none of the extra gamut.</li>
+  <li><strong>Camera dynamic range is a ratio</strong>, display HDR is mostly about peak nits, an HDR format is about encoding. Don’t compare them.</li>
+  <li><strong>Absolute brightness clashes with real rooms.</strong> Accurate HDR modes take away your brightness control, so TVs and operating systems make it relative again in various incompatible ways.</li>
+  <li><strong>Tone mapping</strong> is unavoidable: something must squeeze reality into a display, and in games that’s where most HDR implementations go wrong.</li>
+</ul>
+
+<footer>
+  <p>All demos run locally in your browser. The test scenes are generated procedurally in physical units. The stained-glass photo is “Desk” from the <a href="https://github.com/AcademySoftwareFoundation/openexr-images">OpenEXR sample images</a>, © 2004 Industrial Light &amp; Magic, used under its BSD licence.</p>
+  <p><b>Sources and further reading.</b>
+  <a href="https://www.itu.int/rec/R-REC-BT.2100">ITU-R BT.2100</a> (PQ and HLG) ·
+  <a href="https://en.wikipedia.org/wiki/Perceptual_quantizer">SMPTE ST 2084 / PQ</a> ·
+  <a href="https://www.itu.int/pub/R-REP-BT.2408">ITU-R Report BT.2408</a> (the 203-nit guideline) ·
+  <a href="https://www.itu.int/rec/R-REC-BT.1886">ITU-R BT.1886</a> and <a href="https://www.itu.int/rec/R-REC-BT.2035">BT.2035</a> (SDR reference display and viewing environment) ·
+  <a href="https://en.wikipedia.org/wiki/SRGB">sRGB</a> ·
+  <a href="https://code.videolan.org/videolan/libplacebo/-/commit/9d9164773">libplacebo: “update interpretation of SDR white”</a> ·
+  <a href="https://www.w3.org/TR/css-color-hdr/">CSS Color HDR Module</a>.</p>
+</footer>
+</main>
+
+<script>
+/*__SCENE_JS__*/
+</script>
+<script>
+"use strict";
+// ---------- helpers ----------
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const srgbEnc = (x) => { x = clamp(x, 0, 1); return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055; };
+const srgbDec = (x) => (x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4));
+const to8 = (x) => Math.round(clamp(x, 0, 1) * 255);
+const fmt = (x, d = 3) => {
+  if (x === 0) return "0";
+  const a = Math.abs(x);
+  if (a >= 10000) return Math.round(x).toLocaleString("en-US");
+  if (a >= 100) return x.toFixed(0);
+  if (a >= 10) return x.toFixed(1);
+  if (a >= 1) return x.toFixed(Math.max(0, d - 1));
+  if (a >= 0.001) return x.toPrecision(d);
+  return x.toExponential(2);
+};
+const nf = (x) => Math.round(x).toLocaleString("en-US");
+const PQ = { m1: 2610 / 16384, m2: (2523 / 4096) * 128, c1: 3424 / 4096, c2: (2413 / 4096) * 32, c3: (2392 / 4096) * 32 };
+function pqToNits(E) { const p = Math.pow(clamp(E, 0, 1), 1 / PQ.m2); return 10000 * Math.pow(Math.max(p - PQ.c1, 0) / (PQ.c2 - PQ.c3 * p), 1 / PQ.m1); }
+function nitsToPq(L) { const y = Math.pow(clamp(L / 10000, 0, 1), PQ.m1); return Math.pow((PQ.c1 + PQ.c2 * y) / (1 + PQ.c3 * y), PQ.m2); }
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function clearSvg(s) { while (s.firstChild) s.removeChild(s.firstChild); }
+// Size a canvas to its CSS width at device resolution, return pixel width.
+function fitCanvas(c, cssH) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(c.clientWidth * dpr));
+  const h = Math.max(1, Math.round(cssH * dpr));
+  if (c.width !== w) c.width = w;
+  if (c.height !== h) c.height = h;
+  return { w, h, dpr };
+}
+function drawRamp(c, fn) {
+  const { w, h } = fitCanvas(c, c.clientHeight || 64);
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(w, 1);
+  for (let x = 0; x < w; x++) {
+    const rgb = fn((x + 0.5) / w);
+    img.data[x * 4] = rgb[0]; img.data[x * 4 + 1] = rgb[1]; img.data[x * 4 + 2] = rgb[2]; img.data[x * 4 + 3] = 255;
+  }
+  for (let y = 0; y < h; y++) ctx.putImageData(img, 0, y);
+}
+function segment(id, attr, onChange) {
+  const root = $(id);
+  root.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    root.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    onChange(b.dataset[attr]);
+  });
+  const on = root.querySelector("button.on");
+  return on ? on.dataset[attr] : null;
+}
+const redrawers = [];
+function onResize(fn) { redrawers.push(fn); fn(); }
+try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => redrawers.forEach((f) => f())); } catch (e) {}
+let rT; window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => redrawers.forEach((f) => f()), 120); });
+
+// theme toggle
+(function () {
+  let saved = null;
+  try { saved = localStorage.getItem("hdr-theme"); } catch (e) {}
+  const apply = (t) => {
+    if (t === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", t);
+    document.querySelectorAll("[data-theme-btn]").forEach((b) => b.classList.toggle("on", b.dataset.themeBtn === t));
+    try { localStorage.setItem("hdr-theme", t); } catch (e) {}
+    setTimeout(() => redrawers.forEach((f) => f()), 0);
+  };
+  document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => apply(b.dataset.themeBtn)));
+  if (saved) apply(saved);
+})();
+
+// HDR detection
+(function () {
+  const hdr = window.matchMedia && window.matchMedia("(dynamic-range: high)").matches;
+  const set = (id, yes, text) => { const b = $(id); b.classList.add(yes ? "yes" : "no"); b.lastElementChild.textContent = text; };
+  set("hdr-badge", hdr, hdr ? "Your screen and browser report HDR support. The real HDR photo in section 7 should really glow." : "Your screen or browser doesn’t report HDR. Everything still works, and section 7 has a simulated version of the HDR photo.");
+})();
+
+// ---------- scene (shared) ----------
+const SCN = { w: 960, h: 540 };
+SCN.data = renderScene(SCN.w, SCN.h);
+const BASE_EXPOSURE = 2.5; // scene nits -> display nits, so the shaded paper sits near ~140 nits
+// Filmic-style curve: linear up to a knee at 20% of peak, then a smooth logarithmic shoulder
+// that approaches the peak without ever hitting it. Slope is continuous at the knee.
+function filmic(x, peak) {
+  const s = 0.2 * peak;
+  if (x <= s) return Math.max(x, 0);
+  const u = Math.log(x / s);
+  return s + (peak - s) * (1 - Math.exp(-u * s / (peak - s)));
+}
+// Tone map a color: midtones keep their saturation (curve applied to luminance),
+// highlights near the peak blend towards per-channel mapping so they roll off to white.
+function mapColor(r, g, b, P, fn) {
+  const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  if (L <= 0) return [0, 0, 0];
+  const fL = fn(L, P) / P, s = fL / L, t = fL * fL;
+  return [r * s * (1 - t) + (fn(r, P) / P) * t, g * s * (1 - t) + (fn(g, P) / P) * t, b * s * (1 - t) + (fn(b, P) / P) * t].map((v) => Math.min(1, v));
+}
+function sceneToSdrCanvas(canvas, data, W, H, mode, exposure) {
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(W, H);
+  const d = img.data;
+  for (let i = 0, n = W * H; i < n; i++) {
+    for (let c = 0; c < 3; c++) {
+      if (mode === "clip") d[i * 4 + c] = to8(srgbEnc(data[i * 3 + c] * exposure / 100));
+    }
+    if (mode !== "clip") {
+      const o = mapColor(data[i * 3] * exposure, data[i * 3 + 1] * exposure, data[i * 3 + 2] * exposure, 100, filmic);
+      d[i * 4] = to8(srgbEnc(o[0])); d[i * 4 + 1] = to8(srgbEnc(o[1])); d[i * 4 + 2] = to8(srgbEnc(o[2]));
+    }
+    d[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ---------- 1. RGB mixer ----------
+(function () {
+  const r = $("mix-r"), g = $("mix-g"), b = $("mix-b");
+  function upd() {
+    const R = +r.value, G = +g.value, B = +b.value;
+    $("mix-r-v").textContent = R; $("mix-g-v").textContent = G; $("mix-b-v").textContent = B;
+    $("mix-swatch").style.background = `rgb(${R},${G},${B})`;
+    const hex = "#" + [R, G, B].map((v) => v.toString(16).padStart(2, "0")).join("");
+    const Rn = R / 255, Gn = G / 255, Bn = B / 255;
+    const Y = 0.2126 * Rn + 0.7152 * Gn + 0.0722 * Bn;
+    const Cb = (Bn - Y) / 1.8556, Cr = (Rn - Y) / 1.5748;
+    $("mix-readout").innerHTML = `rgb(${R}, ${G}, ${B}) &nbsp; ${hex}<br>as Y′CbCr: Y′ ${Y.toFixed(3)}, Cb ${Cb >= 0 ? "+" : ""}${Cb.toFixed(3)}, Cr ${Cr >= 0 ? "+" : ""}${Cr.toFixed(3)}`;
+  }
+  [r, g, b].forEach((x) => x.addEventListener("input", upd));
+  upd();
+})();
+
+// ---------- 1b. Y'CbCr split ----------
+(function () {
+  const c = $("ycc-canvas"), W = c.width, H = c.height;
+  const data = renderScene(W, H);
+  const tmp = document.createElement("canvas"); tmp.width = W; tmp.height = H;
+  sceneToSdrCanvas(tmp, data, W, H, "filmic", BASE_EXPOSURE * 0.5);
+  const src = tmp.getContext("2d").getImageData(0, 0, W, H).data;
+  function show(ch) {
+    const ctx = c.getContext("2d");
+    const img = ctx.createImageData(W, H), d = img.data;
+    for (let i = 0; i < W * H; i++) {
+      const R = src[i * 4] / 255, G = src[i * 4 + 1] / 255, B = src[i * 4 + 2] / 255;
+      const Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+      let o;
+      if (ch === "rgb") o = [R, G, B];
+      else if (ch === "r") o = [R, 0, 0];
+      else if (ch === "g") o = [0, G, 0];
+      else if (ch === "b") o = [0, 0, B];
+      else if (ch === "y") o = [Y, Y, Y];
+      else {
+        // show chroma at mid luma, amplified 2x so it's visible
+        const cb = ch === "cb" ? ((B - Y) / 1.8556) * 2 : 0;
+        const cr = ch === "cr" ? ((R - Y) / 1.5748) * 2 : 0;
+        const y = 0.5;
+        o = [y + 1.5748 * cr, y - 0.1873 * cb - 0.4681 * cr, y + 1.8556 * cb];
+      }
+      d[i * 4] = to8(o[0]); d[i * 4 + 1] = to8(o[1]); d[i * 4 + 2] = to8(o[2]); d[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  show(segment("ycc-seg", "ch", show));
+})();
+
+// ---------- 2. CIE diagram ----------
+const LOCUS = [[0.1741,0.005],[0.1738,0.0049],[0.1733,0.0048],[0.1726,0.0048],[0.1714,0.0051],[0.1703,0.0058],[0.1689,0.0069],[0.1669,0.0086],[0.1644,0.0109],[0.1611,0.0138],[0.1566,0.0177],[0.151,0.0227],[0.144,0.0297],[0.1355,0.0399],[0.1241,0.0578],[0.1096,0.0868],[0.0913,0.1327],[0.0687,0.2007],[0.0454,0.295],[0.0235,0.4127],[0.0082,0.5384],[0.0039,0.6548],[0.0139,0.7502],[0.0389,0.812],[0.0743,0.8338],[0.1142,0.8262],[0.1547,0.8059],[0.1929,0.7816],[0.2296,0.7543],[0.2658,0.7243],[0.3016,0.6923],[0.3374,0.6588],[0.3731,0.6245],[0.4087,0.5896],[0.4441,0.5547],[0.4788,0.5202],[0.5125,0.4866],[0.5448,0.4544],[0.5752,0.4242],[0.6029,0.3965],[0.627,0.3725],[0.6482,0.3514],[0.6658,0.334],[0.6801,0.3197],[0.6915,0.3083],[0.7006,0.2993],[0.7079,0.292],[0.714,0.2859],[0.719,0.2809],[0.723,0.2769],[0.726,0.274],[0.7283,0.2717],[0.73,0.27],[0.7347,0.2653]];
+const GAMUTS = {
+  srgb: { pts: [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]], color: "--fg", label: "sRGB" },
+  p3: { pts: [[0.680, 0.320], [0.265, 0.690], [0.150, 0.060]], color: "--c2", label: "P3" },
+  bt2020: { pts: [[0.708, 0.292], [0.170, 0.797], [0.131, 0.046]], color: "--c1", label: "Rec.2020" },
+};
+const XYZ_TO_SRGB = [[3.2406, -1.5372, -0.4986], [-0.9689, 1.8758, 0.0415], [0.0557, -0.2040, 1.0570]];
+function xyToSrgb8(x, y) {
+  const X = x / y, Y = 1, Z = (1 - x - y) / y;
+  let rgb = XYZ_TO_SRGB.map((r) => r[0] * X + r[1] * Y + r[2] * Z).map((v) => Math.max(0, v));
+  const m = Math.max(...rgb);
+  return rgb.map((v) => to8(srgbEnc(v / m)));
+}
+(function () {
+  const c = $("cie"), W = c.width, H = c.height;
+  const pad = { l: 34, b: 30, t: 8, r: 8 };
+  const sx = (x) => pad.l + (x / 0.8) * (W - pad.l - pad.r);
+  const sy = (y) => H - pad.b - (y / 0.9) * (H - pad.t - pad.b);
+  // prerender horseshoe
+  const base = document.createElement("canvas"); base.width = W; base.height = H;
+  const bctx = base.getContext("2d");
+  const img = bctx.createImageData(W, H);
+  const poly = LOCUS.map(([x, y]) => [sx(x), sy(y)]);
+  function inside(px, py) {
+    let ins = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) ins = !ins;
+    }
+    return ins;
+  }
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    if (!inside(px + 0.5, py + 0.5)) continue;
+    const x = ((px + 0.5 - pad.l) / (W - pad.l - pad.r)) * 0.8;
+    const y = ((H - pad.b - (py + 0.5)) / (H - pad.t - pad.b)) * 0.9;
+    const rgb = xyToSrgb8(x, y);
+    const o = (py * W + px) * 4;
+    img.data[o] = rgb[0]; img.data[o + 1] = rgb[1]; img.data[o + 2] = rgb[2]; img.data[o + 3] = 255;
+  }
+  bctx.putImageData(img, 0, 0);
+  const boxes = document.querySelectorAll("[data-gamut]");
+  function draw() {
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = css("--muted"); ctx.strokeStyle = css("--rule"); ctx.lineWidth = 1;
+    ctx.font = "11px -apple-system, Segoe UI, sans-serif";
+    for (let v = 0; v <= 0.8001; v += 0.1) {
+      ctx.beginPath(); ctx.moveTo(sx(v), sy(0)); ctx.lineTo(sx(v), sy(0.9)); ctx.stroke();
+      ctx.fillText(v.toFixed(1), sx(v) - 8, H - pad.b + 16);
+    }
+    for (let v = 0; v <= 0.9001; v += 0.1) {
+      ctx.beginPath(); ctx.moveTo(sx(0), sy(v)); ctx.lineTo(sx(0.8), sy(v)); ctx.stroke();
+      ctx.fillText(v.toFixed(1), 4, sy(v) + 4);
+    }
+    ctx.drawImage(base, 0, 0);
+    ctx.fillText("x", W - 16, H - 4); ctx.fillText("y", pad.l + 6, 14);
+    boxes.forEach((b) => {
+      if (!b.checked) return;
+      const g = GAMUTS[b.dataset.gamut];
+      ctx.strokeStyle = css(g.color); ctx.lineWidth = 2;
+      ctx.beginPath();
+      g.pts.forEach(([x, y], i) => (i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))));
+      ctx.closePath(); ctx.stroke();
+    });
+    ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(sx(0.3127), sy(0.329), 4, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = css("--fg"); ctx.font = "12px -apple-system, Segoe UI, sans-serif";
+    [[460, 0.074, 0.33], [520, 0.074, 0.834], [560, 0.38, 0.62], [600, 0.62, 0.40], [700, 0.66, 0.24]].forEach(([nm, x, y]) => ctx.fillText(nm + " nm", sx(x) + (x < 0.2 ? -44 : 6), sy(y)));
+  }
+  boxes.forEach((b) => b.addEventListener("change", draw));
+  onResize(draw);
+})();
+
+// ---------- 3. Stripes ----------
+(function () {
+  const c = $("stripes");
+  onResize(() => {
+    const { w, h } = fitCanvas(c, 120);
+    const ctx = c.getContext("2d");
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const v = y % 2 ? 255 : 0;
+      for (let x = 0; x < w; x++) { const o = (y * w + x) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = v; img.data[o + 3] = 255; }
+    }
+    ctx.putImageData(img, 0, 0);
+  });
+})();
+
+// ---------- 4. Quantization lab ----------
+(function () {
+  let enc = "gamma";
+  const bits = $("q-bits"), zoom = $("q-zoom");
+  enc = segment("q-enc", "enc", (v) => { enc = v; draw(); });
+  function code(e, levels) { return enc === "gamma" ? Math.round(e * levels) : Math.round(srgbDec(e) * levels); }
+  function value(k, levels) { return enc === "gamma" ? k / levels : srgbEnc(k / levels); }
+  function draw() {
+    const n = +bits.value, z = zoom.checked ? 0.25 : 1, levels = (1 << n) - 1;
+    $("q-bits-v").textContent = n + " (" + (1 << n) + " values)";
+    $("q-title").textContent = enc === "gamma" ? "After quantization, gamma-encoded" : "After quantization, equal steps of light";
+    drawRamp($("q-ref"), (f) => { const v = to8(f * z); return [v, v, v]; });
+    drawRamp($("q-out"), (f) => { const v = to8(value(code(f * z, levels), levels)); return [v, v, v]; });
+    const c = $("q-ticks"); const { w, h, dpr } = fitCanvas(c, 24); const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = css("--fg"); ctx.font = `${Math.round(11 * dpr)}px -apple-system, Segoe UI, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const lw = Math.max(1, Math.round(dpr));
+    let x0 = 0, prev = code((0.5 / w) * z, levels), count = 0;
+    const band = (a, b, k) => {
+      count++;
+      if (a > 0) ctx.fillRect(a, 0, lw, h);
+      const label = String(k);
+      if (b - a >= ctx.measureText(label).width + 8 * dpr) ctx.fillText(label, (a + b) / 2, h / 2);
+    };
+    for (let x = 1; x < w; x++) {
+      const k = code(((x + 0.5) / w) * z, levels);
+      if (k !== prev) { band(x0, x, prev); x0 = x; prev = k; }
+    }
+    band(x0, w, prev);
+    $("q-stats").textContent = `${count} of ${levels + 1} stored values in this view`;
+  }
+  bits.addEventListener("input", draw); zoom.addEventListener("change", draw);
+  onResize(draw);
+  onResize(() => drawRamp($("lin-light"), (f) => { const v = to8(srgbEnc(f)); return [v, v, v]; }));
+})();
+
+// ---------- 4b. TF plot + code table ----------
+(function () {
+  const s = $("tf-plot");
+  function draw() {
+    clearSvg(s);
+    const L = 40, T = 12, Wp = 260, Hp = 200;
+    const X = (v) => L + v * Wp, Y = (v) => T + (1 - v) * Hp;
+    for (let i = 0; i <= 4; i++) {
+      el("line", { x1: X(i / 4), y1: Y(0), x2: X(i / 4), y2: Y(1), stroke: css("--rule") }, s);
+      el("line", { x1: X(0), y1: Y(i / 4), x2: X(1), y2: Y(i / 4), stroke: css("--rule") }, s);
+      el("text", { x: X(i / 4), y: Y(0) + 15, "text-anchor": "middle", "font-size": 10, fill: css("--muted") }, s, Math.round(i * 255 / 4));
+      el("text", { x: L - 5, y: Y(i / 4) + 3, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, s, (i / 4).toFixed(2));
+    }
+    el("text", { x: X(0.5), y: 252, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, s, "stored value (0–255)");
+    el("text", { x: 10, y: Y(0.5), "text-anchor": "middle", "font-size": 11, fill: css("--muted"), transform: `rotate(-90 10 ${Y(0.5)})` }, s, "light (linear)");
+    const line = (fn, color, dash) => {
+      let d = "";
+      for (let i = 0; i <= 100; i++) { const e = i / 100; d += (i ? "L" : "M") + X(e).toFixed(1) + " " + Y(fn(e)).toFixed(1); }
+      el("path", { d, fill: "none", stroke: color, "stroke-width": 2.2, "stroke-dasharray": dash || "" }, s);
+    };
+    line((e) => e, css("--c2"), "5 4");
+    line((e) => Math.pow(e, 2.2), css("--c1"));
+    el("text", { x: X(0.52), y: Y(0.62), "font-size": 11, fill: css("--c2") }, s, "equal steps of light");
+    el("text", { x: X(0.6), y: Y(0.22), "font-size": 11, fill: css("--c1") }, s, "gamma 2.2");
+    el("circle", { cx: X(186 / 255), cy: Y(Math.pow(186 / 255, 2.2)), r: 4, fill: css("--c1") }, s);
+    el("text", { x: X(186 / 255) + 8, y: Y(Math.pow(186 / 255, 2.2)) + 14, "font-size": 10, fill: css("--fg") }, s, "186 → 0.50");
+  }
+  onResize(draw);
+  const codes = [0, 1, 2, 9, 50, 128, 186, 243, 254, 255];
+  let h = "<tr><th>Code</th><th>Equal steps</th><th>Gamma 2.2</th></tr>";
+  for (const k of codes) {
+    const e = k / 255;
+    h += `<tr><td class="mono">${k} <span style="color:var(--muted)">0x${k.toString(16).padStart(2, "0")}</span></td><td>${fmt(e, 3)}</td><td>${fmt(Math.pow(e, 2.2), 3)}</td></tr>`;
+  }
+  $("code-table").innerHTML = h;
+})();
+
+// ---------- 5. Pixel decoder ----------
+(function () {
+  const ids = ["px-r", "px-g", "px-b"];
+  const M = [[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]];
+  function upd() {
+    const v = ids.map((i) => clamp(Math.round(+$(i).value || 0), 0, 255));
+    const white = +$("px-white").value;
+    const n = v.map((x) => x / 255);
+    const lin = n.map(srgbDec);
+    const g22 = n.map((x) => Math.pow(x, 2.2));
+    const XYZ = M.map((r) => r[0] * lin[0] + r[1] * lin[1] + r[2] * lin[2]);
+    $("px-swatch").style.background = `rgb(${v.join(",")})`;
+    const row = (label, arr, f) => `<tr><td>${label}</td>${arr.map((x) => `<td>${f(x)}</td>`).join("")}</tr>`;
+    $("px-table").innerHTML =
+      `<tr><th>Step</th><th>R</th><th>G</th><th>B</th></tr>` +
+      row("Stored byte", v, (x) => x) +
+      row("÷ 255 (encoded, 0–1)", n, (x) => x.toFixed(3)) +
+      row("Linear light, gamma 2.2", g22, (x) => x.toFixed(3)) +
+      row("Linear light, exact sRGB curve", lin, (x) => x.toFixed(3)) +
+      row(`Light on a ${white}-nit screen`, lin, (x) => fmt(x * white, 3) + " nits");
+    $("px-cap").innerHTML = `As a real-world color this is CIE XYZ ≈ (${XYZ.map((x) => x.toFixed(3)).join(", ")}), relative to the screen’s white. Its overall brightness (luminance Y) is <b>${(XYZ[1] * 100).toFixed(1)}%</b> of white, which is about <b>${fmt(XYZ[1] * white, 3)} nits</b> on a ${white}-nit screen, and something else entirely on another one. That’s what “relative” means.`;
+  }
+  ids.concat("px-white").forEach((i) => $(i).addEventListener("input", upd));
+  segment("px-preset", "px", (v) => { v.split(",").forEach((x, i) => ($(ids[i]).value = x)); upd(); });
+  ids.forEach((i) => $(i).addEventListener("input", () => document.querySelectorAll("#px-preset button").forEach((b) => b.classList.remove("on"))));
+  upd();
+})();
+
+// ---------- 6. Nits ladder ----------
+(function () {
+  const s = $("ladder");
+  const W = 940, L = 190, R = 20, lo = -4, hi = 9.5;
+  const X = (nits) => L + ((Math.log10(nits) - lo) / (hi - lo)) * (W - L - R);
+  const refs = [
+    [0.001, "starlit night"], [0.05, "moonlit landscape"], [20, "walls of a dim room"], [120, "paper on an office desk"],
+    [7000, "blue sky"], [25000, "white wall in sun"], [1e7, "light-bulb filament"], [1.6e9, "the sun"],
+  ];
+  // emitted light: ranges here are the spread of typical PEAK values, not contrast ranges
+  // emitted light: each dot is a typical MAXIMUM. Anything below it is also possible (brightness settings, darker content).
+  const screens = [
+    { v: [350], label: "Ordinary monitor / laptop", color: "--c2", note: "≈350 nits max; SDR white is wherever you set it" },
+    { v: [1500], label: "Phone, sunlight boost", color: "--c2", note: "≈1,500 nits max" },
+    { v: [1000], label: "Good OLED TV", color: "--c3", note: "≈1,000 nits, small highlights only" },
+    { v: [1000, 4000], label: "Mastering monitors", color: "--c3", note: "1,000 or 4,000 nits: what films are graded on" },
+    { v: [10000], label: "End of the PQ scale", color: "--c4", note: "10,000 nits, practically unused" },
+  ];
+  function draw() {
+    clearSvg(s);
+    const exp = +$("cam-exp").value / 100, stops = +$("cam-type").value;
+    const top0 = 105, axisY = 390;
+    for (let e = -4; e <= 9; e++) {
+      const x = X(Math.pow(10, e));
+      el("line", { x1: x, y1: top0 - 6, x2: x, y2: axisY - 16, stroke: css("--rule") }, s);
+      const lab = e < 0 ? "0." + "0".repeat(-e - 1) + "1" : e < 3 ? String(10 ** e) : e < 6 ? (10 ** (e - 3)) + "k" : e < 9 ? (10 ** (e - 6)) + "M" : "1B";
+      el("text", { x, y: axisY, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, s, lab);
+    }
+    el("text", { x: X(1), y: axisY + 22, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, s, "nits (cd/m²), log scale");
+    const rowLabel = (y, text) => el("text", { x: L - 10, y: y + 12, "text-anchor": "end", "font-size": 13, "font-weight": 600, fill: css("--fg") }, s, text);
+    const section = (y, text) => el("text", { x: 8, y, "font-size": 11, "font-weight": 700, "letter-spacing": "0.08em", fill: css("--accent") }, s, text);
+    section(top0 - 70, "SCENE LIGHT");
+    rowLabel(top0, "Real world");
+    refs.forEach(([n, label]) => {
+      const x = X(n), y = top0 + 8;
+      el("circle", { cx: x, cy: y, r: 4.5, fill: css("--c1") }, s);
+      el("text", { x: x + 4, y: y - 9, "font-size": 11, fill: css("--fg"), transform: `rotate(-40 ${x + 4} ${y - 9})` }, s, label);
+    });
+    // camera window
+    const decades = stops * Math.log10(2);
+    const topLog = -1 + exp * (9.3 + 1);
+    const camLo = Math.pow(10, topLog - decades), camHi = Math.pow(10, topLog);
+    const cy = top0 + 32;
+    rowLabel(cy, "Camera, one shot");
+    el("rect", { x: X(camLo), y: cy, width: X(camHi) - X(camLo), height: 16, rx: 4, fill: css("--c1"), opacity: 0.85 }, s);
+    el("text", { x: (X(camLo) + X(camHi)) / 2, y: cy + 12, "text-anchor": "middle", "font-size": 11, fill: "#fff", "font-weight": 600 }, s,
+      `${stops} stops ≈ ${nf(Math.pow(2, stops))} : 1, sliding with exposure`);
+    // divider
+    const dy = cy + 42;
+    el("line", { x1: 8, y1: dy, x2: W - R, y2: dy, stroke: css("--muted"), "stroke-dasharray": "2 4" }, s);
+    section(dy + 20, "EMITTED LIGHT");
+    let y = dy + 30;
+    screens.forEach((b) => {
+      rowLabel(y, b.label);
+      b.v.forEach((n) => el("circle", { cx: X(n), cy: y + 8, r: 6, fill: css(b.color) }, s));
+      el("text", { x: X(Math.max(...b.v)) + 12, y: y + 12, "font-size": 11, fill: css("--muted") }, s, b.note);
+      y += 28;
+    });
+    // typical movie content
+    rowLabel(y, "A typical HDR movie");
+    el("rect", { x: X(0.05), y: y + 2, width: X(100) - X(0.05), height: 12, rx: 6, fill: css("--c4"), opacity: 0.85 }, s);
+    el("rect", { x: X(100), y: y + 2, width: X(600) - X(100), height: 12, rx: 6, fill: css("--c4"), opacity: 0.35 }, s);
+    el("text", { x: X(600) + 8, y: y + 12, "font-size": 11, fill: css("--muted") }, s, "most pixels; a few highlights up to a few hundred nits");
+  }
+  $("cam-exp").addEventListener("input", draw);
+  $("cam-type").addEventListener("change", draw);
+  onResize(draw);
+})();
+
+// ---------- 7. PQ explorer ----------
+(function () {
+  const s = $("pq-plot");
+  const code = $("pq-code");
+  const W = 900, H = 300, L = 70, R = 20, T = 16, B = 40;
+  const lo = -4, hi = 4;
+  const X = (c) => L + (c / 1023) * (W - L - R);
+  const Y = (n) => T + (1 - (Math.log10(Math.max(n, 1e-4)) - lo) / (hi - lo)) * (H - T - B);
+  function draw() {
+    clearSvg(s);
+    for (let e = lo; e <= hi; e++) {
+      el("line", { x1: L, y1: Y(10 ** e), x2: W - R, y2: Y(10 ** e), stroke: css("--rule") }, s);
+      el("text", { x: L - 8, y: Y(10 ** e) + 4, "text-anchor": "end", "font-size": 12, fill: css("--muted") }, s, e < 0 ? (10 ** e).toString() : nf(10 ** e));
+    }
+    for (let c = 0; c <= 1023; c += 128) {
+      el("line", { x1: X(c), y1: T, x2: X(c), y2: H - B, stroke: css("--rule") }, s);
+      el("text", { x: X(c), y: H - B + 18, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, s, c);
+    }
+    el("text", { x: (W + L) / 2, y: H - 4, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, s, "10-bit code value");
+    el("text", { x: 14, y: (H - B + T) / 2, "text-anchor": "middle", "font-size": 12, fill: css("--muted"), transform: `rotate(-90 14 ${(H - B + T) / 2})` }, s, "nits (log)");
+    // SDR band
+    el("rect", { x: L, y: Y(200), width: W - L - R, height: Y(0.05) - Y(200), fill: css("--c2"), opacity: 0.08 }, s);
+    el("text", { x: W - R - 6, y: Y(200) + 14, "text-anchor": "end", "font-size": 11, fill: css("--c2") }, s, "where nearly all of a typical HDR movie sits");
+    let d = "";
+    for (let c = 1; c <= 1023; c++) d += (c > 1 ? "L" : "M") + X(c).toFixed(1) + " " + Y(pqToNits(c / 1023)).toFixed(1);
+    el("path", { d, fill: "none", stroke: css("--c1"), "stroke-width": 2.5 }, s);
+    const c = +code.value, n = pqToNits(c / 1023);
+    el("line", { x1: X(c), y1: T, x2: X(c), y2: H - B, stroke: css("--fg"), "stroke-dasharray": "3 3" }, s);
+    el("circle", { cx: X(c), cy: Y(n), r: 5, fill: css("--fg") }, s);
+    $("pq-code-v").textContent = c;
+    const next = pqToNits(Math.min(1023, c + 1) / 1023);
+    $("pq-readout").textContent = `= ${fmt(n, 4)} nits · next step up: +${c < 1023 ? ((next / n - 1) * 100).toFixed(2) + "%" : "—"}`;
+  }
+  code.addEventListener("input", draw);
+  onResize(draw);
+
+  // code count table + step size chart
+  const encs = [
+    { name: "PQ, 10-bit", bits: 10, dec: (e) => pqToNits(e), color: "--c1" },
+    { name: "PQ, 12-bit", bits: 12, dec: (e) => pqToNits(e), color: "--c4", dash: "6 4" },
+    { name: "Gamma 2.2 stretched to 10,000 nits, 10-bit", bits: 10, dec: (e) => 10000 * Math.pow(e, 2.2), color: "--c3" },
+    { name: "Equal steps of light to 10,000 nits, 10-bit", bits: 10, dec: (e) => 10000 * e, color: "--c2", dash: "2 3" },
+    { name: "SDR: gamma 2.2, 8-bit (white drawn at 100 nits)", bits: 8, dec: (e) => 100 * Math.pow(e, 2.2), color: "--fg", dash: "8 3" },
+  ];
+  const ranges = [[0, 0.01], [0.01, 0.1], [0.1, 1], [1, 10], [10, 100], [100, 1000], [1000, 10000]];
+  let h = "<tr><th>Encoding</th>" + ranges.map(([a, b]) => `<th>${a < 1 ? a : nf(a)}–${b < 1 ? b : nf(b)}</th>`).join("") + "</tr>";
+  encs.forEach((en) => {
+    const N = (1 << en.bits) - 1;
+    const counts = ranges.map(() => 0);
+    for (let k = 0; k <= N; k++) {
+      const v = en.dec(k / N);
+      const i = k === 0 ? 0 : ranges.findIndex(([a, b]) => v > a && v <= b);
+      if (i >= 0) counts[i]++;
+    }
+    h += `<tr><td><span style="display:inline-block;width:14px;height:3px;background:var(${en.color});vertical-align:middle;margin-right:6px"></span>${en.name}</td>` + counts.map((c, i) => `<td>${en.dec(1) <= ranges[i][0] ? "—" : nf(c)}</td>`).join("") + "</tr>";
+  });
+  $("pq-table").innerHTML = h;
+
+  const sp = $("step-plot");
+  function drawSteps() {
+    clearSvg(sp);
+    const W2 = 900, H2 = 320, L2 = 60, R2 = 20, T2 = 10, B2 = 40;
+    const xlo = -3, xhi = 4, ylo = -2, yhi = 3; // step % from 0.01% to 1000%
+    const X2 = (n) => L2 + ((Math.log10(n) - xlo) / (xhi - xlo)) * (W2 - L2 - R2);
+    const Y2 = (p) => T2 + (1 - (Math.log10(p) - ylo) / (yhi - ylo)) * (H2 - T2 - B2);
+    for (let e = xlo; e <= xhi; e++) {
+      el("line", { x1: X2(10 ** e), y1: T2, x2: X2(10 ** e), y2: H2 - B2, stroke: css("--rule") }, sp);
+      el("text", { x: X2(10 ** e), y: H2 - B2 + 18, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, sp, e < 0 ? String(10 ** e) : nf(10 ** e));
+    }
+    for (let e = ylo; e <= yhi; e++) {
+      el("line", { x1: L2, y1: Y2(10 ** e), x2: W2 - R2, y2: Y2(10 ** e), stroke: css("--rule") }, sp);
+      el("text", { x: L2 - 8, y: Y2(10 ** e) + 4, "text-anchor": "end", "font-size": 12, fill: css("--muted") }, sp, (10 ** e) + "%");
+    }
+    el("rect", { x: L2, y: Y2(1), width: W2 - L2 - R2, height: Y2(10 ** ylo) - Y2(1), fill: css("--c3"), opacity: 0.07 }, sp);
+    el("text", { x: L2 + 8, y: Y2(10 ** ylo) - 8, "font-size": 11, fill: css("--c3") }, sp, "below ~1%: generally smooth");
+    el("text", { x: (W2 + L2) / 2, y: H2 - 4, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, sp, "brightness (nits, log)");
+    el("text", { x: 14, y: (H2 - B2 + T2) / 2, "text-anchor": "middle", "font-size": 12, fill: css("--muted"), transform: `rotate(-90 14 ${(H2 - B2 + T2) / 2})` }, sp, "size of one step");
+    encs.forEach((en) => {
+      const N = (1 << en.bits) - 1;
+      let d = "", started = false, lastX = -1;
+      for (let k = 1; k < N; k++) {
+        const a = en.dec(k / N), b = en.dec((k + 1) / N);
+        if (a < 10 ** xlo || a > 10 ** xhi) continue;
+        const p = clamp(((b - a) / a) * 100, 10 ** ylo, 10 ** yhi);
+        const x = X2(a);
+        if (x - lastX < 1.5 && k < N - 1) continue;
+        lastX = x;
+        d += (started ? "L" : "M") + x.toFixed(1) + " " + Y2(p).toFixed(1); started = true;
+      }
+      el("path", { d, fill: "none", stroke: css(en.color), "stroke-width": 2.2, "stroke-dasharray": en.dash || "" }, sp);
+    });
+  }
+  onResize(drawSteps);
+})();
+
+// ---------- 8. Room ----------
+(function () {
+  const c = $("room-canvas"), W = c.width, H = c.height;
+  const data = renderNight(W, H);
+  const ctx = c.getContext("2d"), img = ctx.createImageData(W, H);
+  const PREVIEW_WHITE = 140; // nits shown as your screen's white in this simulation
+  const TV_PEAK = 800;
+  const s = $("room-light"), br = $("room-bright");
+  let mode = segment("room-mode", "mode", (v) => { mode = v; upd(); });
+  function upd() {
+    const v = +s.value / 100;
+    const refl = 0.02 + 15 * v * v; // light from the room reflected off the screen, in nits
+    const gain = mode === "sdr" ? 1 + 7 * (+br.value / 100) : 1;
+    br.disabled = mode !== "sdr";
+    br.parentElement.style.opacity = mode === "sdr" ? 1 : 0.45;
+    const surround = Math.round(255 * Math.pow(v, 0.8));
+    $("room").style.background = `rgb(${surround},${Math.round(surround * 0.98)},${Math.round(surround * 0.93)})`;
+    $("room-light-v").textContent = v < 0.1 ? "dark room" : v < 0.35 ? "evening, lamp on" : v < 0.7 ? "daytime" : "sunny afternoon";
+    $("room-bright-v").textContent = mode === "sdr" ? gain.toFixed(1) + "×" : "locked";
+    const d = img.data;
+    for (let i = 0, n = W * H; i < n; i++) {
+      for (let k = 0; k < 3; k++) d[i * 4 + k] = to8(srgbEnc((Math.min(data[i * 3 + k] * gain, TV_PEAK) + refl) / PREVIEW_WHITE));
+      d[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    $("room-cap").innerHTML = (mode === "hdr"
+      ? `The film puts the street, the people and the buildings at about 0.05–0.5 nits and the street lamp at a few hundred, as it was graded in a dark room. `
+      : `The same picture as a relative signal: the brightness control multiplies everything by ${gain.toFixed(1)}×, lifting the shadows above the glare. `) +
+      `Right now light from the room adds about <b>${fmt(refl, 2)} nits</b> on top of every pixel. ` +
+      (mode === "hdr" ? `Raise the room lighting and the shadows drown, and the brightness slider is locked: the signal already says exactly how bright each pixel must be. Switch to SDR to see what you’d normally do.` : `This is what everyone does with SDR in a bright room, and what an accurate HDR mode doesn’t let you do.`);
+  }
+  s.addEventListener("input", upd); br.addEventListener("input", upd); upd();
+})();
+
+// ---------- 8b. Desk photo toggle ----------
+(function () {
+  const caps = {
+    sim: $("desk-cap").innerHTML,
+    real: "These are the actual files: an SDR JPEG and a PQ-encoded HDR AVIF of the same photo. On an HDR screen in Chrome, Edge or Safari, the glass on the right should glow brighter than anything else on this page while the book and table match the left image. Without HDR, the browser tone maps the AVIF and the two will look similar. The photo is “Desk” from the OpenEXR sample images, © Industrial Light &amp; Magic, BSD licence.",
+  };
+  segment("desk-mode", "mode", (m) => {
+    $("desk-sim").style.display = m === "sim" ? "" : "none";
+    $("desk-real").style.display = m === "real" ? "" : "none";
+    $("desk-cap").innerHTML = caps[m];
+  });
+})();
+
+// ---------- 9. Tone mapping playground ----------
+(function () {
+  const c = $("tm-canvas"), W = SCN.w, H = SCN.h, data = SCN.data;
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(W, H);
+  let op = "filmic";
+  op = segment("tm-op", "op", (v) => { op = v; draw(); });
+  const peakSel = $("tm-peak"), expS = $("tm-exp"), clipM = $("tm-clipmark");
+  // luminance histogram of the scene (log10 nits)
+  const lum = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) lum[i] = 0.2126 * data[i * 3] + 0.7152 * data[i * 3 + 1] + 0.0722 * data[i * 3 + 2];
+  function curve(x, P) {
+    if (op === "clip") return Math.min(x, P);
+    if (op === "reinhard") return (x * P) / (x + P);
+    if (op === "filmic") return filmic(x, P);
+    return Math.min(filmic(x, 4000), P); // tone mapped for 4000 nits, display clips
+  }
+  function unclipped(x, P) {
+    if (op === "clip") return x;
+    if (op === "bad") return filmic(x, 4000);
+    return curve(x, P);
+  }
+  let cur = { P: 1000, k: BASE_EXPOSURE };
+  function draw() {
+    const P = +peakSel.value, ev = +expS.value;
+    const k = BASE_EXPOSURE * Math.pow(2, ev);
+    cur = { P, k };
+    $("tm-exp-v").textContent = (ev > 0 ? "+" : "") + ev + " stops";
+    const d = img.data, mark = clipM.checked;
+    // LUT over log-luminance for speed
+    const LUTN = 4096, lmin = -3, lmax = 7;
+    const lut = new Float32Array(LUTN), lutU = new Float32Array(LUTN);
+    for (let i = 0; i < LUTN; i++) { const x = Math.pow(10, lmin + (i / (LUTN - 1)) * (lmax - lmin)); lut[i] = curve(x, P) / P; lutU[i] = unclipped(x, P); }
+    const look = (x, arr) => { if (x <= 0) return 0; let t = ((Math.log10(x) - lmin) / (lmax - lmin)) * (LUTN - 1); t = clamp(t, 0, LUTN - 1); const i = Math.floor(t), f = t - i; return i >= LUTN - 1 ? arr[LUTN - 1] : arr[i] * (1 - f) + arr[i + 1] * f; };
+    const perChannel = op === "clip";
+    for (let i = 0, n = W * H; i < n; i++) {
+      let clipped = false;
+      const r = data[i * 3] * k, g = data[i * 3 + 1] * k, b = data[i * 3 + 2] * k;
+      const pr = look(r, lut), pg = look(g, lut), pb = look(b, lut);
+      let o;
+      if (perChannel) o = [pr, pg, pb];
+      else {
+        const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        const fL = look(L, lut), s = L > 0 ? fL / L : 0, tt = fL * fL;
+        o = [r * s * (1 - tt) + pr * tt, g * s * (1 - tt) + pg * tt, b * s * (1 - tt) + pb * tt];
+      }
+      if (mark && (look(r, lutU) > P * 1.001 || look(g, lutU) > P * 1.001 || look(b, lutU) > P * 1.001)) clipped = true;
+      d[i * 4] = to8(srgbEnc(o[0])); d[i * 4 + 1] = to8(srgbEnc(o[1])); d[i * 4 + 2] = to8(srgbEnc(o[2]));
+      if (clipped) { d[i * 4] = 255; d[i * 4 + 1] = 0; d[i * 4 + 2] = 200; }
+      d[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    drawCurve(P, k);
+  }
+  const sv = $("tm-curve");
+  function drawCurve(P, k) {
+    clearSvg(sv);
+    const Wc = 900, Hc = 230, L = 64, R = 20, T = 12, B = 38, xlo = -2, xhi = 6;
+    const X = (n) => L + ((Math.log10(n) - xlo) / (xhi - xlo)) * (Wc - L - R);
+    const ymax = Math.max(P, op === "bad" ? Math.min(4000, 4000) : P) * 1.08;
+    const Y = (n) => T + (1 - n / ymax) * (Hc - T - B);
+    // histogram
+    const bins = 80, hist = new Array(bins).fill(0);
+    for (let i = 0; i < lum.length; i += 3) {
+      const v = lum[i] * k; if (v <= 0) continue;
+      const b = Math.floor(((Math.log10(v) - xlo) / (xhi - xlo)) * bins);
+      if (b >= 0 && b < bins) hist[b]++;
+    }
+    const hm = Math.max(...hist);
+    hist.forEach((v, b) => {
+      const x0 = L + (b / bins) * (Wc - L - R), w = (Wc - L - R) / bins;
+      const hh = (Math.sqrt(v / hm)) * (Hc - T - B) * 0.9;
+      el("rect", { x: x0, y: Hc - B - hh, width: w - 1, height: hh, fill: css("--muted"), opacity: 0.18 }, sv);
+    });
+    for (let e = xlo; e <= xhi; e++) {
+      el("line", { x1: X(10 ** e), y1: T, x2: X(10 ** e), y2: Hc - B, stroke: css("--rule") }, sv);
+      el("text", { x: X(10 ** e), y: Hc - B + 16, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, sv, e < 0 ? String(10 ** e) : nf(10 ** e));
+    }
+    el("text", { x: (Wc + L) / 2, y: Hc - 4, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, sv, "scene brightness after exposure (nits, log) · grey bars: how much of the picture is at each level");
+    [0, 0.5, 1].forEach((f) => {
+      el("text", { x: L - 8, y: Y(P * f) + 4, "text-anchor": "end", "font-size": 12, fill: css("--muted") }, sv, nf(P * f));
+    });
+    el("text", { x: 14, y: (Hc - B + T) / 2, "text-anchor": "middle", "font-size": 12, fill: css("--muted"), transform: `rotate(-90 14 ${(Hc - B + T) / 2})` }, sv, "display nits");
+    el("line", { x1: L, y1: Y(P), x2: Wc - R, y2: Y(P), stroke: css("--c1"), "stroke-dasharray": "4 4" }, sv);
+    el("text", { x: L + 6, y: Y(P) - 6, "font-size": 11, fill: css("--c1") }, sv, `display peak: ${nf(P)} nits`);
+    if (op === "bad") {
+      let d2 = "";
+      for (let i = 0; i <= 300; i++) { const x = 10 ** (xlo + (i / 300) * (xhi - xlo)); const yv = Math.min(filmic(x, 4000), ymax); d2 += (i ? "L" : "M") + X(x).toFixed(1) + " " + Y(yv).toFixed(1); }
+      el("path", { d: d2, fill: "none", stroke: css("--muted"), "stroke-width": 1.5, "stroke-dasharray": "4 3" }, sv);
+      el("text", { x: X(3000), y: Y(P) + 16, "font-size": 11, fill: css("--muted") }, sv, "what the game sends ↗ clipped by the display");
+    }
+    let d = "";
+    for (let i = 0; i <= 300; i++) { const x = 10 ** (xlo + (i / 300) * (xhi - xlo)); d += (i ? "L" : "M") + X(x).toFixed(1) + " " + Y(curve(x, P)).toFixed(1); }
+    el("path", { d, fill: "none", stroke: css("--fg"), "stroke-width": 2.5 }, sv);
+  }
+  const hover = $("tm-hover");
+  c.addEventListener("mousemove", (e) => {
+    const r = c.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - r.left) / r.width) * W), y = Math.floor(((e.clientY - r.top) / r.height) * H);
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const i = (y * W + x) * 3;
+    const Ls = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    const out = curve(Ls * cur.k, cur.P);
+    hover.style.display = "block";
+    hover.textContent = `scene ${fmt(Ls, 3)} nits → display ${fmt(out, 3)} nits`;
+  });
+  c.addEventListener("mouseleave", () => (hover.style.display = "none"));
+  [peakSel, clipM].forEach((x) => x.addEventListener("change", draw));
+  expS.addEventListener("input", draw);
+  onResize(() => drawCurve(cur.P, cur.k));
+  draw();
+})();
+
+// ---------- 10. Raised blacks ----------
+(function () {
+  const maxE = 0.15;
+  onResize(() => {
+    // Assume the reader's display is ~gamma 2.2, so we re-encode intended light with 1/2.2.
+    drawRamp($("rb-a"), (f) => { const e = f * maxE; const lin = Math.pow(e, 2.2); const v = to8(Math.pow(lin, 1 / 2.2)); return [v, v, v]; });
+    drawRamp($("rb-b"), (f) => { const e = f * maxE; const lin = srgbDec(e); const v = to8(Math.pow(lin, 1 / 2.2)); return [v, v, v]; });
+  });
+  const e = 0.05;
+  $("rb-cap").innerHTML = `Same stored values, different curves. At a stored value of ${e} (about 13 out of 255), gamma 2.2 gives ${(Math.pow(e, 2.2) * 100).toFixed(2)}% of white, while the sRGB formula gives ${(srgbDec(e) * 100).toFixed(2)}%: <b>${(srgbDec(e) / Math.pow(e, 2.2)).toFixed(1)}× brighter</b>. In SDR mode nobody notices, because the monitor does the decoding. In HDR mode the game does it, and the shadows lift.`;
+})();
+
+</script>
+</body>
+</html>
