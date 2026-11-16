@@ -8,7 +8,8 @@ RGB: red, green, blue. Pixels in colorful images can, and often are represented 
 What those numbers mean, i.e. what real-world "color" and "brightness" they represent is much more nuanced. The rest of the article will cover that.
 Red, green and blue are called "channels".
 
-A notable exception is movies: they are usually stored as YUV - also 3 numbers, that mathematically can be converted between to and from RGB.
+A notable exception is movies: they are usually stored as YUV - also 3 numbers, where Y is the "luminance" - how bright a pixel should be. You can always losslessly convert (in theory) between YUV and RGB as it's a simple matrix transformation. This is done, so that U and V (color information) can be compressed, but also for historical reasons as TV started with just "Y" and "U and V" were added later to make color TV.
+
 For simplicity, just assume you can always convert YUV to RGB and back, and let's ignore it for now.
 
 # Color spaces
@@ -26,11 +27,11 @@ Color spaces are usually defined as:
 The CIE XYZ colorspace is linear - if the numbers are scaled by a constant, e.g. multiplied by 2, it means the color will be the same, but the luminance (physical brightness) will be 2x higher.
 
 # Encoding / quantization / nonlinearity / transfer function / gamma
-The RGB triplets are conceptually real numbers, which have infinitely many values (e.g. there's an infinite number of values between 0 and 1).
+The RGB triplets are conceptually real numbers, which have infinitely many possible values (e.g. there's an infinite number of values between 0 and 1).
 In the digital world we can't fit infinite precision into a finite number of bytes / bits.
 
 So we need to "quantize" - compress the range into the available bandwidth.
-Imagine a color space, and one of it's channels let's call it "red", where 0 would mean absence of red and 1 would mean maximum red.
+Imagine a color space, and one of its channels, let's call it "red", where 0 would mean absence of red and 1 would mean maximum red.
 
 #### TODO HERE AND BELOW - need to use 255 in math examples
 
